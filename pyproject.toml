@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-orchestrator"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["requests", "PyYAML"]
+
+[project.optional-dependencies]
+devdocs = [
+    "fastapi",
+    "uvicorn",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[project.scripts]
+ai-orchestrator = "ai_orchestrator.cli:main"
