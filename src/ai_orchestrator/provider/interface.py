@@ -22,6 +22,7 @@ class ProviderInstance:
     instance_id: str
     gpu_name: str
     dph: float
+    public_ip: str | None = None
 
 
 class Provider(ABC):

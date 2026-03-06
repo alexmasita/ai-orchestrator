@@ -1,0 +1,34 @@
+# Config for Script #1: A100/H100 80GB Setup
+vast_api_key: "bfc42d92b18f1ac049575940992fa70bf492767b5822f4d9556239a63a913751"
+vast_api_url: "https://console.vast.ai/api/v0"
+
+gpu:
+  # Set to 79 to ensure you get the 80GB version, not the 40GB A100.
+  min_vram_gb: 79
+  preferred_models:
+    - A100_SXM4
+    - A100_PCIE
+    - H100_SXM
+    - H100_PCIE
+
+min_inet_down_mbps: 500 # High speed needed for 120B model pull
+min_inet_up_mbps: 100
+
+min_reliability: 0.99
+verified_only: true
+
+# Budget increased for A100 class GPUs
+max_dph: 2.5
+allow_interruptible: false
+limit: 1
+
+idle_timeout_seconds: 1800
+# Increased to 30 mins (1800s) because the 120B model takes a long time to load into VRAM
+instance_ready_timeout_seconds: 1800
+snapshot_version: "v1-80gb"
+
+# Whisper runs on CPU in our script, but we reserve headroom
+whisper_vram_gb: 0 
+whisper_disk_gb: 10
+# Total disk should be at least 250GB for the 120B + 30B models
+min_disk_gb: 250

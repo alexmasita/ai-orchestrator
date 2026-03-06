@@ -17,11 +17,14 @@ min_inet_up_mbps: 100
 min_reliability: 0.98
 verified_only: true
 
-max_dph: 1.0
-allow_interruptible: true
-limit: 5
+max_dph: 1.2
+allow_interruptible: false
+limit: 20
 
 idle_timeout_seconds: 1800
+# Readiness timeout for waiting on DeepSeek/Whisper ports+HTTP before failing.
+# Increase for large model cold-starts.
+instance_ready_timeout_seconds: 1200
 snapshot_version: "v1"
 
 # Required when "whisper" is included in --models.

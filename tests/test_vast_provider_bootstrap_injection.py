@@ -23,17 +23,25 @@ class _FakeResponse:
 @pytest.fixture
 def _vast_with_put_recorder(monkeypatch):
     vast = _load_vast_module()
-    calls = {"put": [], "post": []}
+    calls = {"put": [], "post": [], "get": []}
     state = {
         "put_response": _FakeResponse(
             200,
-            {"instance_id": "i-123", "gpu_name": "RTX_4090", "dph": 0.5},
-        )
+            {"new_contract": "i-123"},
+        ),
+        "get_response": _FakeResponse(
+            200,
+            {"instances": {"gpu_name": "RTX_4090", "dph_total": 0.5, "public_ipaddr": "1.2.3.4"}},
+        ),
     }
 
     def _put(url, headers=None, json=None):
         calls["put"].append({"url": url, "headers": headers, "json": json})
         return state["put_response"]
+
+    def _get(url, headers=None, params=None, json=None):
+        calls["get"].append({"url": url, "headers": headers, "params": params, "json": json})
+        return state["get_response"]
 
     def _post(url, headers=None, json=None):
         calls["post"].append({"url": url, "headers": headers, "json": json})
@@ -41,8 +49,8 @@ def _vast_with_put_recorder(monkeypatch):
 
     fake_requests = SimpleNamespace(
         put=_put,
+        get=_get,
         post=_post,
-        get=lambda *args, **kwargs: _FakeResponse(500, {}),
         delete=lambda *args, **kwargs: _FakeResponse(500, {}),
     )
     monkeypatch.setattr(vast, "requests", fake_requests, raising=False)
@@ -65,10 +73,12 @@ def test_create_instance_uses_put_asks_endpoint_and_injects_bootstrap_script(_va
     )
 
     assert len(calls["put"]) == 1
+    assert len(calls["get"]) == 1
     assert len(calls["post"]) == 0
     request = calls["put"][0]
     assert request["url"] == "https://vast.example/api/v0/asks/offer123"
     assert request["json"]["onstart"] == "echo boot"
+    assert calls["get"][0]["url"] == "https://vast.example/api/v0/instances/i-123"
 
 
 def test_create_instance_payload_enforces_port_mappings(_vast_with_put_recorder):
@@ -110,6 +120,7 @@ def test_create_instance_payload_is_deterministic_for_identical_calls(_vast_with
     provider.create_instance("offer123", "snapshot-v1", instance_config)
 
     assert len(calls["put"]) == 2
+    assert len(calls["get"]) == 2
     first = calls["put"][0]["json"]
     second = calls["put"][1]["json"]
     assert first == second
@@ -125,3 +136,4 @@ def test_create_instance_missing_bootstrap_script_raises_value_error_and_skips_p
         provider.create_instance("offer123", "snapshot-v1", {})
 
     assert calls["put"] == []
+    assert calls["get"] == []

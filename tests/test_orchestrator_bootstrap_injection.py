@@ -48,8 +48,10 @@ class _RecordingProvider:
     def __init__(self, events):
         self._events = events
         self.create_calls = []
+        self.search_calls = []
 
-    def search_offers(self, _requirements):
+    def search_offers(self, requirements):
+        self.search_calls.append(requirements)
         return []
 
     def create_instance(self, offer_id, snapshot_version, instance_config):
@@ -221,3 +223,56 @@ def test_run_orchestration_determinism_and_instance_config_isolation(monkeypatch
         "generate_bootstrap_script",
         "create_instance",
     ]
+
+
+def test_run_orchestration_passes_provider_agnostic_requirements_and_runtime_only_instance_config(
+    monkeypatch,
+):
+    orch = _load_orchestrator_module()
+    script = "#!/usr/bin/env bash\nset -e\necho boot"
+    config = _sample_config() | {
+        "idle_timeout_seconds": 1800,
+        "verified_only": True,
+        "limit": 5,
+    }
+    models = _sample_models()
+    events = []
+
+    class _SearchProvider(_RecordingProvider):
+        def search_offers(self, requirements):
+            self.search_calls.append(requirements)
+            return [_sample_offer()]
+
+    provider = _SearchProvider(events)
+    monkeypatch.setattr(
+        orch,
+        "generate_bootstrap_script",
+        lambda _cfg, _mdl: script,
+        raising=False,
+    )
+
+    orch.run_orchestration(provider, config, models, required_vram_gb=24)
+
+    assert len(provider.search_calls) == 1
+    search_requirements = provider.search_calls[0]
+    assert search_requirements == {
+        "required_vram_gb": 24,
+        "max_dph": 2.0,
+        "min_reliability": 0.9,
+        "min_inet_up_mbps": 100.0,
+        "min_inet_down_mbps": 100.0,
+        "verified_only": True,
+        "require_rentable": True,
+        "allow_interruptible": True,
+        "min_duration_seconds": 1800,
+        "limit": 5,
+    }
+    forbidden = {"dph_total", "inet_up", "inet_down", "verified", "rentable"}
+    assert forbidden.isdisjoint(set(search_requirements))
+
+    assert len(provider.create_calls) == 1
+    instance_config = provider.create_calls[0]["instance_config"]
+    assert instance_config == {
+        "bootstrap_script": script,
+        "idle_timeout_seconds": 1800,
+    }

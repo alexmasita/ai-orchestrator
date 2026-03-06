@@ -262,3 +262,22 @@ def test_run_orchestration_readiness_url_args_are_deterministic(monkeypatch):
 
     assert len(call_urls) == 2
     assert call_urls[0] == call_urls[1]
+
+
+def test_run_orchestration_propagates_readiness_timeout_from_config(monkeypatch):
+    orch = _load_orchestrator_module()
+    provider = _RecordingProvider()
+    calls = []
+    config = _sample_config()
+    config["instance_ready_timeout_seconds"] = 1200
+
+    def _ready(*args, **kwargs):
+        calls.append((args, kwargs))
+        return True
+
+    _monkeypatch_common(monkeypatch, orch, _ready)
+    _ = orch.run_orchestration(provider, config, _sample_models())
+
+    assert len(calls) == 1
+    _args, kwargs = calls[0]
+    assert kwargs["timeout"] == 1200
