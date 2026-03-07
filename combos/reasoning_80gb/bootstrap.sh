@@ -2,7 +2,8 @@
 set -euo pipefail
 
 export PYTHONUNBUFFERED=1
-
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export VLLM_CPU_KVCACHE_SPACE=4
 # ============================================
 # UNIVERSAL PATH DETECTION
 # ============================================
@@ -310,8 +311,10 @@ start_control_api
 update_state "architect_server" "starting" "Launching Architect vLLM on port $ARCHITECT_PORT"
 vllm serve "$MODELS_DIR/architect" \
     --port $ARCHITECT_PORT \
-    --gpu-memory-utilization 0.55 \
-    --max-model-len 8192 \
+    --gpu-memory-utilization 0.50 \
+    --cpu-offload-gb 20 \
+    --max-model-len 4096 \
+    --enable-prefix-caching \
     --dtype float16 \
     --served-model-name architect &
 
@@ -320,7 +323,7 @@ wait_for_port $ARCHITECT_PORT "architect" 300
 update_state "developer_server" "starting" "Launching Developer vLLM on port $DEVELOPER_PORT"
 vllm serve "$MODELS_DIR/developer" \
     --port $DEVELOPER_PORT \
-    --gpu-memory-utilization 0.25 \
+    --gpu-memory-utilization 0.30 \
     --max-model-len 8192 \
     --dtype float16 \
     --served-model-name developer &
