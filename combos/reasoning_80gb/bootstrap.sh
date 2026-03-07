@@ -273,7 +273,8 @@ if [ ! -f "$SETUP_MARKER" ]; then
     update_state "apt_install" "complete" "System dependencies installed"
 
     update_state "python_install" "running" "Installing vLLM, faster-whisper-server, and Python dependencies"
-    pip install git+https://github.com/SYSTRAN/faster-whisper-server.git huggingface_hub kokoro-tts tomli -q    update_state "python_install" "complete" "Python dependencies installed"
+    pip install git+https://github.com/SYSTRAN/faster-whisper-server.git huggingface_hub kokoro-tts tomli -q    
+    update_state "python_install" "complete" "Python dependencies installed"
 
     update_state "architect_download" "running" "Downloading architect model"
     hf download "$ARCHITECT_MODEL" --local-dir "$MODELS_DIR/architect"
