@@ -273,8 +273,7 @@ if [ ! -f "$SETUP_MARKER" ]; then
     update_state "apt_install" "complete" "System dependencies installed"
 
     update_state "python_install" "running" "Installing vLLM, faster-whisper-server, and Python dependencies"
-    pip install faster-whisper-server huggingface_hub kokoro-tts tomli -q
-    update_state "python_install" "complete" "Python dependencies installed"
+    pip install git+https://github.com/SYSTRAN/faster-whisper-server.git huggingface_hub kokoro-tts tomli -q    update_state "python_install" "complete" "Python dependencies installed"
 
     update_state "architect_download" "running" "Downloading architect model"
     hf download "$ARCHITECT_MODEL" --local-dir "$MODELS_DIR/architect"
@@ -301,6 +300,7 @@ update_state "architect_server" "starting" "Launching Architect vLLM on port $AR
 vllm serve "$MODELS_DIR/architect" \
     --port $ARCHITECT_PORT \
     --gpu-memory-utilization 0.55 \
+    --max-model-len 8192 \
     --dtype float16 \
     --served-model-name architect &
 
@@ -308,6 +308,7 @@ update_state "developer_server" "starting" "Launching Developer vLLM on port $DE
 vllm serve "$MODELS_DIR/developer" \
     --port $DEVELOPER_PORT \
     --gpu-memory-utilization 0.25 \
+    --max-model-len 8192 \
     --dtype float16 \
     --served-model-name developer &
 
@@ -323,7 +324,7 @@ uvicorn faster_whisper_server.main:app \
 
 update_state "tts_server" "starting" "Launching Kokoro TTS on port $TTS_PORT"
 
-python -m kokoro_fastapi \
+python3 -m kokoro_fastapi \
     --host 0.0.0.0 \
     --port $TTS_PORT &
 
