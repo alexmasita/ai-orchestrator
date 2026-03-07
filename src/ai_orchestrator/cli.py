@@ -186,7 +186,13 @@ def run_combo_start(args) -> int:
         instance_config: dict[str, Any] = {
             "bootstrap_script": rendered_bootstrap_script,
             "ports": runtime_state.get("ports", {}),
+            "combo_name": str(runtime_state.get("combo_name") or args.combo),
         }
+        if isinstance(runtime_config.get("bootstrap_base_url"), str) and runtime_config.get(
+            "bootstrap_base_url"
+        ):
+            instance_config["bootstrap_base_url"] = str(runtime_config["bootstrap_base_url"])
+        instance_config["runtime_config"] = {"bootstrap_base_url": runtime_config.get("bootstrap_base_url")}
         if runtime_config.get("min_disk_gb") is not None:
             instance_config["disk"] = runtime_config["min_disk_gb"]
         if runtime_config.get("idle_timeout_seconds") is not None:

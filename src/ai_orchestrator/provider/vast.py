@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import sys
 import time
 from typing import Any
@@ -20,6 +22,13 @@ _FORBIDDEN_CONTAINER_ENV_KEYS = {
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
 }
+_INLINE_BOOTSTRAP_MAX_BYTES = 3500
+_MAX_ONSTART_BYTES = 4048
+_MAX_LOADER_CHARS = 512
+DEFAULT_BOOTSTRAP_BASE_URL = (
+    "https://raw.githubusercontent.com/alexmasita/ai-orchestrator/refs/heads/main"
+)
+_COMBO_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class VastProviderError(Exception):
@@ -221,6 +230,45 @@ class VastProvider(Provider):
         return str(int(timeout_seconds)) if timeout_seconds.is_integer() else str(timeout_seconds)
 
     @staticmethod
+    def _utf8_len(value: str) -> int:
+        return len(value.encode("utf-8"))
+
+    @staticmethod
+    def _resolve_bootstrap_base_url(instance_config: dict[str, Any]) -> str:
+        # Deterministic resolution order:
+        # 1) instance_config["bootstrap_base_url"]
+        # 2) instance_config["runtime_config"]["bootstrap_base_url"]
+        # 3) DEFAULT_BOOTSTRAP_BASE_URL
+        direct_value = instance_config.get("bootstrap_base_url")
+        if isinstance(direct_value, str) and direct_value.strip() != "":
+            return direct_value.strip().rstrip("/")
+
+        runtime_config = instance_config.get("runtime_config", {})
+        if isinstance(runtime_config, dict):
+            nested_value = runtime_config.get("bootstrap_base_url")
+            if isinstance(nested_value, str) and nested_value.strip() != "":
+                return nested_value.strip().rstrip("/")
+
+        return DEFAULT_BOOTSTRAP_BASE_URL.rstrip("/")
+
+    @classmethod
+    def _validate_payload_lengths(cls, payload: dict[str, Any]) -> None:
+        image_value = payload.get("image", "")
+        if not isinstance(image_value, str) or cls._utf8_len(image_value) > 1024:
+            raise VastProviderError("Invalid payload: image length exceeds 1024 bytes")
+
+        onstart_value = payload.get("onstart", "")
+        if not isinstance(onstart_value, str) or cls._utf8_len(onstart_value) >= _MAX_ONSTART_BYTES:
+            raise VastProviderError(
+                f"Invalid payload: onstart length must be < {_MAX_ONSTART_BYTES} bytes"
+            )
+
+        label_value = payload.get("label")
+        if label_value is not None:
+            if not isinstance(label_value, str) or cls._utf8_len(label_value) > 256:
+                raise VastProviderError("Invalid payload: label length exceeds 256 bytes")
+
+    @staticmethod
     def _parse_required_vram_gb(requirements: dict[str, Any]) -> int:
         if "required_vram_gb" not in requirements:
             raise VastProviderError("required_vram_gb is required")
@@ -395,6 +443,32 @@ class VastProvider(Provider):
             script = instance_config.get("bootstrap_script")
             if not isinstance(script, str) or script == "":
                 raise ValueError("Missing bootstrap_script")
+            script_size_bytes = self._utf8_len(script)
+
+            onstart_payload = script
+            if script_size_bytes > _INLINE_BOOTSTRAP_MAX_BYTES:
+                combo_name = str(instance_config.get("combo_name", "reasoning_80gb")).strip()
+                if combo_name == "" or _COMBO_NAME_RE.fullmatch(combo_name) is None:
+                    raise VastProviderError("Invalid combo_name for oversized bootstrap script")
+
+                bootstrap_base_url = self._resolve_bootstrap_base_url(instance_config)
+                bootstrap_url = f"{bootstrap_base_url}/combos/{combo_name}/bootstrap.sh"
+                quoted_bootstrap_url = shlex.quote(bootstrap_url)
+                loader_script = "\n".join(
+                    [
+                        "set -euo pipefail",
+                        (
+                            "curl -fsSL --retry 3 --retry-delay 2 "
+                            f"{quoted_bootstrap_url} -o /tmp/ai_orch_bootstrap.sh"
+                        ),
+                        "bash /tmp/ai_orch_bootstrap.sh",
+                    ]
+                )
+                if len(loader_script) >= _MAX_LOADER_CHARS:
+                    raise VastProviderError(
+                        f"Generated loader exceeds {_MAX_LOADER_CHARS - 1} characters"
+                    )
+                onstart_payload = loader_script
 
             requested_ports = instance_config.get("ports", {})
             exposed_ports: list[int] = []
@@ -426,10 +500,11 @@ class VastProvider(Provider):
                 "image": "ubuntu:22.04",
                 "runtype": "ssh_direct",
                 "env": env_payload,
-                "onstart": script,
+                "onstart": onstart_payload,
             }
             if "disk" in instance_config and instance_config.get("disk") is not None:
                 payload["disk"] = instance_config["disk"]
+            self._validate_payload_lengths(payload)
 
             def _create_from_offer_id(target_offer_id: str) -> Any:
                 _debug_log(f"create_instance endpoint={self._url(f'asks/{target_offer_id}')} method=PUT")

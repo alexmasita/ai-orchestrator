@@ -33,6 +33,17 @@ def _load_vast_module():
         return None
 
 
+def _assert_transport_contract(original_script: str, onstart_script: str) -> None:
+    if len(original_script.encode("utf-8")) <= 3500:
+        assert onstart_script.encode("utf-8") == original_script.encode("utf-8")
+        return
+
+    assert onstart_script.startswith("set -euo pipefail\n")
+    assert "curl -fsSL --retry 3 --retry-delay 2 " in onstart_script
+    assert "bash /tmp/ai_orch_bootstrap.sh" in onstart_script
+    assert onstart_script.encode("utf-8") != original_script.encode("utf-8")
+
+
 def test_combo2_env_injection_precedes_bootstrap_body():
     runtime_script = _load_runtime_script_module()
     assert runtime_script is not None, "Expected ai_orchestrator.runtime.script module"
@@ -142,10 +153,11 @@ def test_combo2_bootstrap_body_preserved(monkeypatch):
 
     assert len(recorded_payloads) == 1
     onstart_script = recorded_payloads[0]["onstart"]
-    assert onstart_script.encode("utf-8") == combo.bootstrap_script.encode("utf-8")
+    _assert_transport_contract(combo.bootstrap_script, onstart_script)
 
     onstart_body = "\n".join(onstart_script.splitlines()[1:])
-    assert onstart_body.encode("utf-8") == original_body.encode("utf-8")
+    if len(combo.bootstrap_script.encode("utf-8")) <= 3500:
+        assert onstart_body.encode("utf-8") == original_body.encode("utf-8")
 
 
 def test_runtime_loads_bootstrap_from_combo_directory(monkeypatch):
@@ -228,8 +240,9 @@ def test_runtime_loads_bootstrap_from_combo_directory(monkeypatch):
 
     assert len(recorded_payloads) == 1
     onstart_script = recorded_payloads[0]["onstart"]
-    assert onstart_script.encode("utf-8") == expected_bootstrap.encode("utf-8")
+    _assert_transport_contract(expected_bootstrap, onstart_script)
 
     expected_body = "\n".join(expected_bootstrap.splitlines()[1:])
     onstart_body = "\n".join(onstart_script.splitlines()[1:])
-    assert onstart_body.encode("utf-8") == expected_body.encode("utf-8")
+    if len(expected_bootstrap.encode("utf-8")) <= 3500:
+        assert onstart_body.encode("utf-8") == expected_body.encode("utf-8")

@@ -137,3 +137,115 @@ def test_create_instance_missing_bootstrap_script_raises_value_error_and_skips_p
 
     assert calls["put"] == []
     assert calls["get"] == []
+
+
+def test_create_instance_uses_remote_loader_for_oversized_bootstrap(_vast_with_put_recorder):
+    vast, calls, _ = _vast_with_put_recorder
+    provider = vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")
+    large_script = "#!/usr/bin/env bash\n" + ("echo boot\n" * 600)
+
+    provider.create_instance(
+        "offer123",
+        "snapshot-v1",
+        {
+            "bootstrap_script": large_script,
+            "combo_name": "reasoning_80gb",
+            "bootstrap_base_url": "https://example.invalid/raw",
+        },
+    )
+
+    payload = calls["put"][0]["json"]
+    onstart = payload["onstart"]
+    assert onstart.startswith("set -euo pipefail\n")
+    assert "curl -fsSL --retry 3 --retry-delay 2 " in onstart
+    assert "bash /tmp/ai_orch_bootstrap.sh" in onstart
+    assert onstart != large_script
+    assert len(onstart.encode("utf-8")) < 4048
+
+
+def test_create_instance_loader_is_deterministic_for_oversized_bootstrap(_vast_with_put_recorder):
+    vast, calls, _ = _vast_with_put_recorder
+    provider = vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")
+    large_script = "#!/usr/bin/env bash\n" + ("echo boot\n" * 600)
+    instance_config = {
+        "bootstrap_script": large_script,
+        "combo_name": "reasoning_80gb",
+        "bootstrap_base_url": "https://example.invalid/raw",
+    }
+
+    provider.create_instance("offer123", "snapshot-v1", instance_config)
+    provider.create_instance("offer123", "snapshot-v1", instance_config)
+
+    assert len(calls["put"]) == 2
+    first_onstart = calls["put"][0]["json"]["onstart"]
+    second_onstart = calls["put"][1]["json"]["onstart"]
+    assert first_onstart == second_onstart
+
+
+def test_create_instance_oversized_bootstrap_invalid_combo_name_raises(_vast_with_put_recorder):
+    vast, calls, _ = _vast_with_put_recorder
+    provider = vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")
+    large_script = "#!/usr/bin/env bash\n" + ("echo boot\n" * 600)
+
+    with pytest.raises(vast.VastProviderError, match="Invalid combo_name"):
+        provider.create_instance(
+            "offer123",
+            "snapshot-v1",
+            {
+                "bootstrap_script": large_script,
+                "combo_name": "reasoning 80gb",
+            },
+        )
+
+    assert calls["put"] == []
+    assert calls["get"] == []
+
+
+def test_create_instance_oversized_loader_enforces_local_preflight(_vast_with_put_recorder):
+    vast, calls, _ = _vast_with_put_recorder
+    provider = vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")
+    large_script = "#!/usr/bin/env bash\n" + ("echo boot\n" * 600)
+    huge_base_url = "https://example.invalid/" + ("x" * 5000)
+
+    with pytest.raises(vast.VastProviderError, match="Generated loader exceeds"):
+        provider.create_instance(
+            "offer123",
+            "snapshot-v1",
+            {
+                "bootstrap_script": large_script,
+                "combo_name": "reasoning_80gb",
+                "bootstrap_base_url": huge_base_url,
+            },
+        )
+
+    assert calls["put"] == []
+    assert calls["get"] == []
+
+
+def test_create_instance_bootstrap_base_url_resolution_order(_vast_with_put_recorder):
+    vast, calls, _ = _vast_with_put_recorder
+    provider = vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")
+    large_script = "#!/usr/bin/env bash\n" + ("echo boot\n" * 600)
+
+    provider.create_instance(
+        "offer123",
+        "snapshot-v1",
+        {
+            "bootstrap_script": large_script,
+            "combo_name": "reasoning_80gb",
+            "runtime_config": {"bootstrap_base_url": "https://runtime.invalid/base"},
+        },
+    )
+    runtime_onstart = calls["put"][0]["json"]["onstart"]
+    assert "https://runtime.invalid/base/combos/reasoning_80gb/bootstrap.sh" in runtime_onstart
+
+    provider.create_instance(
+        "offer124",
+        "snapshot-v1",
+        {
+            "bootstrap_script": large_script,
+            "combo_name": "reasoning_80gb",
+        },
+    )
+    fallback_onstart = calls["put"][1]["json"]["onstart"]
+    assert f"{vast.DEFAULT_BOOTSTRAP_BASE_URL}/combos/reasoning_80gb/bootstrap.sh" in fallback_onstart
