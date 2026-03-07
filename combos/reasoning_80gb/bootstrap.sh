@@ -45,10 +45,8 @@ update_state() {
     local stage="$1"
     local status="$2"
     local message="$3"
-
     local timestamp
     timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
     local instance_id="${VAST_CONTAINERLABEL:-unknown}"
 
 cat > "$STATE_FILE" << EOF
@@ -71,6 +69,12 @@ EOF
 
 echo "[VAST_STATE] $timestamp | stage=$stage | status=$status | $message"
 
+if [ -n "$WEBHOOK_URL" ]; then
+    curl -s -X POST "$WEBHOOK_URL" \
+        -H "Content-Type: application/json" \
+        -d @"$STATE_FILE" || true
+fi
+
 }
 
 # ============================================
@@ -82,18 +86,15 @@ wait_for_port() {
     local port=$1
     local name=$2
     local max_wait=${3:-120}
-
     local waited=0
 
     update_state "${name}_health_check" "waiting" "Waiting for $name on port $port..."
 
-    while ! curl -s http://localhost:$port >/dev/null 2>&1; do
-
+    while ! curl -s -o /dev/null -w "%{http_code}" "http://localhost:$port" | grep -qE "200|404|405"; do
         sleep 2
         waited=$((waited+2))
 
         if [ $waited -ge $max_wait ]; then
-
             update_state "${name}_health_check" "timeout" "$name did not respond on port $port after ${max_wait}s"
             return 1
         fi
@@ -103,14 +104,75 @@ wait_for_port() {
 }
 
 # ============================================
+# SELF DESTROY
+# ============================================
+
+self_destroy() {
+
+    local instance_id="${VAST_CONTAINERLABEL:-}"
+    update_state "auto_destroy" "triggered" "Idle timeout reached (${IDLE_TIMEOUT_SECONDS}s). Self-destroying."
+
+    if [ -n "$VAST_API_KEY" ] && [ -n "$instance_id" ]; then
+        curl -s -X DELETE \
+        "https://console.vast.ai/api/v0/instances/${instance_id}/" \
+        -H "Authorization: Bearer $VAST_API_KEY" \
+        -H "Content-Type: application/json" || true
+
+        echo "[VAST_STATE] Self-destroy request sent for instance $instance_id"
+    else
+        echo "[VAST_STATE] Cannot self destroy, API key missing"
+    fi
+}
+
+# ============================================
+# IDLE MONITOR
+# ============================================
+
+start_idle_monitor() {
+
+    if [ -z "$VAST_API_KEY" ]; then
+        echo "[VAST_STATE] API key not set, idle destroy disabled"
+        return
+    fi
+
+    echo "[VAST_STATE] Idle monitor started (${IDLE_TIMEOUT_SECONDS}s)"
+
+    (
+
+    LAST_ACTIVITY_FILE="/tmp/.last_activity"
+    date +%s > "$LAST_ACTIVITY_FILE"
+
+    while true; do
+
+        sleep 30
+
+        if [ -f "/tmp/.last_request" ]; then
+            date +%s > "$LAST_ACTIVITY_FILE"
+            rm -f "/tmp/.last_request"
+        fi
+
+        LAST=$(cat "$LAST_ACTIVITY_FILE")
+        NOW=$(date +%s)
+        IDLE=$((NOW-LAST))
+
+        if [ $IDLE -ge $IDLE_TIMEOUT_SECONDS ]; then
+            self_destroy
+            exit 0
+        fi
+
+    done
+
+    ) &
+}
+
+# ============================================
 # CONTROL API
 # ============================================
 
 start_control_api() {
+    update_state "control_api" "starting" "Launching control API"
 
-update_state "control_api" "starting" "Launching control API"
-
-cat > "$CONTROL_PY" <<PY
+    cat > "$CONTROL_PY" <<PYEOF
 from fastapi import FastAPI
 from datetime import datetime, timezone
 import json, os
@@ -118,6 +180,14 @@ import json, os
 app = FastAPI(title="Vast Instance Control API")
 
 STATE_FILE = "$STATE_FILE"
+ACTIVITY_FILE = "/tmp/.last_request"
+
+SERVICE_PORTS = {
+    "architect": $ARCHITECT_PORT,
+    "developer": $DEVELOPER_PORT,
+    "stt": $WHISPER_PORT,
+    "tts": $TTS_PORT,
+}
 
 @app.get("/status")
 async def status():
@@ -125,15 +195,63 @@ async def status():
         with open(STATE_FILE) as f:
             return json.load(f)
     except:
-        return {"status":"unknown"}
-PY
+        return {"status": "unknown", "error": "state file not found"}
 
-pip install fastapi uvicorn httpx -q 2>/dev/null || true
+@app.get("/health")
+async def health():
+    import httpx
+    results={}
+    for name,port in SERVICE_PORTS.items():
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                r=await client.get(f"http://localhost:{port}")
+                results[name]={"status":"up","code":r.status_code}
+        except:
+            results[name]={"status":"down"}
+    results["control"]={"status":"up"}
+    open(ACTIVITY_FILE,"w").close()
+    return {"services":results,"timestamp":datetime.now(timezone.utc).isoformat()}
 
-cd "$BASE_DIR"
+@app.post("/ping")
+async def ping():
+    open(ACTIVITY_FILE,"w").close()
+    return {"pong": True, "timestamp": datetime.now(timezone.utc).isoformat()}
+@app.post("/stop")
+async def stop():
+    api_key=os.environ.get("VAST_API_KEY","")
+    instance_id=os.environ.get("VAST_CONTAINERLABEL","")
+    if not api_key or not instance_id:
+        return {"error":"missing api key"}
+    import httpx
+    async with httpx.AsyncClient() as client:
+        r=await client.put(
+            f"https://console.vast.ai/api/v0/instances/{instance_id}/",
+            headers={"Authorization":f"Bearer {api_key}"},
+            json={"state":"stopped"}
+        )
+        return {"action": "stop", "response": r.json()}
 
-uvicorn control_api:app --host 0.0.0.0 --port $CONTROL_PORT &
-update_state "control_api" "started" "Control API running on port $CONTROL_PORT"
+@app.post("/destroy")
+async def destroy():
+    api_key=os.environ.get("VAST_API_KEY","")
+    instance_id=os.environ.get("VAST_CONTAINERLABEL","")
+    if not api_key or not instance_id:
+        return {"error":"missing api key"}
+    import httpx
+    async with httpx.AsyncClient() as client:
+        r=await client.delete(
+            f"https://console.vast.ai/api/v0/instances/{instance_id}/",
+            headers={"Authorization":f"Bearer {api_key}"}
+        )
+        return {"action": "destroy", "response": r.json()}
+PYEOF
+
+    pip install fastapi uvicorn httpx -q 2>/dev/null || true
+
+    cd "$BASE_DIR"
+
+    uvicorn control_api:app --host 0.0.0.0 --port $CONTROL_PORT &
+    update_state "control_api" "started" "Control API running on port $CONTROL_PORT"
 
 }
 
@@ -143,32 +261,31 @@ update_state "control_api" "started" "Control API running on port $CONTROL_PORT"
 
 if [ ! -f "$SETUP_MARKER" ]; then
 
-update_state "setup_start" "running" "Initial environment setup"
+    update_state "setup_start" "running" "Initial environment setup"
 
-mkdir -p "$MODELS_DIR"
+    mkdir -p "$MODELS_DIR"
+    mkdir -p "$MODELS_DIR/whisper"
+    mkdir -p "$MODELS_DIR/kokoro"
 
-apt-get update
-apt-get install -y ffmpeg curl python3-pip
+    update_state "apt_install" "running" "Installing system dependencies"
+    apt-get update
+    apt-get install -y ffmpeg curl python3-pip
+    update_state "apt_install" "complete" "System dependencies installed"
 
-pip install faster-whisper-server huggingface_hub kokoro-tts tomli -q
-# Architect model
+    update_state "python_install" "running" "Installing vLLM, faster-whisper-server, and Python dependencies"
+    pip install faster-whisper-server huggingface_hub kokoro-tts tomli -q
+    update_state "python_install" "complete" "Python dependencies installed"
 
-update_state "architect_download" "running" "Downloading architect model"
-hf download "$ARCHITECT_MODEL" \
-  --local-dir "$MODELS_DIR/architect"
-update_state "architect_download" "complete" "Architect model downloaded"
+    update_state "architect_download" "running" "Downloading architect model"
+    hf download "$ARCHITECT_MODEL" --local-dir "$MODELS_DIR/architect"
+    update_state "architect_download" "complete" "Architect model downloaded"
 
-# Developer model
+    update_state "developer_download" "running" "Downloading developer model"
+    hf download "$DEVELOPER_MODEL" --local-dir "$MODELS_DIR/developer"
+    update_state "developer_download" "complete" "Developer model downloaded"
 
-update_state "developer_download" "running" "Downloading developer model"
-
-hf download "$DEVELOPER_MODEL" \
-  --local-dir "$MODELS_DIR/developer"
-
-update_state "developer_download" "complete" "Developer model downloaded"
-
-touch "$SETUP_MARKER"
-update_state "setup_complete" "complete" "First time setup finished. Snapshot recommended."
+    touch "$SETUP_MARKER"
+    update_state "setup_complete" "complete" "First time setup finished. Snapshot recommended."
 
 fi
 
@@ -178,31 +295,21 @@ fi
 
 update_state "services_starting" "running" "Starting all services"
 
-# Control API
-
 start_control_api
 
-# Architect
-
 update_state "architect_server" "starting" "Launching Architect vLLM on port $ARCHITECT_PORT"
-
 vllm serve "$MODELS_DIR/architect" \
     --port $ARCHITECT_PORT \
     --gpu-memory-utilization 0.55 \
     --dtype float16 \
     --served-model-name architect &
 
-# Developer
-
 update_state "developer_server" "starting" "Launching Developer vLLM on port $DEVELOPER_PORT"
-
 vllm serve "$MODELS_DIR/developer" \
     --port $DEVELOPER_PORT \
     --gpu-memory-utilization 0.25 \
     --dtype float16 \
     --served-model-name developer &
-
-# STT
 
 update_state "stt_server" "starting" "Launching faster-whisper-server (CPU) on port $WHISPER_PORT"
 
@@ -214,14 +321,11 @@ uvicorn faster_whisper_server.main:app \
     --host 0.0.0.0 \
     --port $WHISPER_PORT &
 
-# --- TTS ---
 update_state "tts_server" "starting" "Launching Kokoro TTS on port $TTS_PORT"
 
 python -m kokoro_fastapi \
-  --host 0.0.0.0 \
-  --port $TTS_PORT &
-
-# Wait for readiness
+    --host 0.0.0.0 \
+    --port $TTS_PORT &
 
 wait_for_port $ARCHITECT_PORT "architect" 300 &
 wait_for_port $DEVELOPER_PORT "developer" 300 &
@@ -229,31 +333,28 @@ wait_for_port $WHISPER_PORT "stt" 120 &
 wait_for_port $TTS_PORT "tts" 120 &
 wait
 
-# ============================================
-# FINAL READY STATE
-# ============================================
+start_idle_monitor
 
 update_state "all_services" "ready" \
-"All services up. Architect:$ARCHITECT_PORT Developer:$DEVELOPER_PORT STT:$WHISPER_PORT Control:$CONTROL_PORT"
+"All services up. Architect:$ARCHITECT_PORT Developer:$DEVELOPER_PORT STT:$WHISPER_PORT TTS:$TTS_PORT Control:$CONTROL_PORT"
 
 echo "============================================"
-echo "  HIGH-REASONING 80GB DUO — ALL SERVICES READY"
-echo "  Target: A100/H100 80GB"
+echo " HIGH-REASONING 80GB DUO — ALL SERVICES READY"
 echo "============================================"
-
-echo "  Architect: http://localhost:$ARCHITECT_PORT"
-echo "  Developer: http://localhost:$DEVELOPER_PORT"
-echo "  STT:       http://localhost:$WHISPER_PORT"
-echo "  Control:   http://localhost:$CONTROL_PORT"
-
+echo " Architect: http://localhost:$ARCHITECT_PORT"
+echo " Developer: http://localhost:$DEVELOPER_PORT"
+echo " STT:       http://localhost:$WHISPER_PORT"
+echo " TTS:       http://localhost:$TTS_PORT"
+echo " Control:   http://localhost:$CONTROL_PORT"
 echo ""
-echo "  CONTROL API ENDPOINTS:"
-echo "    GET  /status"
-echo "    GET  /health"
+echo " CONTROL API:"
+echo "   GET  /status"
+echo "   GET  /health"
+echo "   POST /ping"
+echo "   POST /stop"
+echo "   POST /destroy"
 echo ""
 echo "  IDLE TIMEOUT: ${IDLE_TIMEOUT_SECONDS}s"
 echo "============================================"
-
-# Keep container alive
 
 wait
