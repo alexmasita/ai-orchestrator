@@ -15,6 +15,11 @@ except Exception:  # pragma: no cover - test suite monkeypatches requests
 
 INSTANCE_READY_POLL_INTERVAL_SECONDS = 2
 INSTANCE_READY_TIMEOUT_SECONDS_DEFAULT = 180
+_FORBIDDEN_CONTAINER_ENV_KEYS = {
+    "VAST_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+}
 
 
 class VastProviderError(Exception):
@@ -391,15 +396,40 @@ class VastProvider(Provider):
             if not isinstance(script, str) or script == "":
                 raise ValueError("Missing bootstrap_script")
 
+            requested_ports = instance_config.get("ports", {})
+            exposed_ports: list[int] = []
+            if isinstance(requested_ports, dict):
+                for raw_port in requested_ports.values():
+                    if isinstance(raw_port, bool):
+                        continue
+                    try:
+                        port = int(raw_port)
+                    except (TypeError, ValueError):
+                        continue
+                    exposed_ports.append(port)
+            if len(exposed_ports) == 0:
+                exposed_ports = [8080, 9000]
+
+            env_payload: dict[str, str] = {}
+            for port in sorted(set(exposed_ports)):
+                env_payload[f"-p {port}:{port}"] = "1"
+
+            raw_env = instance_config.get("env", {})
+            if isinstance(raw_env, dict):
+                for raw_key in sorted(raw_env.keys(), key=lambda item: str(item)):
+                    key = str(raw_key)
+                    if key in _FORBIDDEN_CONTAINER_ENV_KEYS:
+                        continue
+                    env_payload[key] = str(raw_env[raw_key])
+
             payload = {
                 "image": "ubuntu:22.04",
                 "runtype": "ssh_direct",
-                "env": {
-                    "-p 8080:8080": "1",
-                    "-p 9000:9000": "1",
-                },
+                "env": env_payload,
                 "onstart": script,
             }
+            if "disk" in instance_config and instance_config.get("disk") is not None:
+                payload["disk"] = instance_config["disk"]
 
             def _create_from_offer_id(target_offer_id: str) -> Any:
                 _debug_log(f"create_instance endpoint={self._url(f'asks/{target_offer_id}')} method=PUT")
@@ -469,6 +499,81 @@ class VastProvider(Provider):
                 dph=float(dph_value),
                 public_ip=self._resolve_public_ip(instance_payload),
             )
+
+    def poll_instance(self, instance_id: str) -> dict[str, Any]:
+        request_exc = self._request_exception_type()
+        try:
+            response = requests.get(
+                self._url(f"instances/{instance_id}"),
+                headers={"Authorization": f"Bearer {self.api_key}"},
+            )
+        except request_exc as exc:  # pragma: no cover - exercised by tests
+            raise VastProviderError(f"Vast /instances request failed: {exc}") from exc
+
+        self._raise_for_status("/instances", response, (200,))
+        instance_payload = self._extract_instance_payload(response.json())
+        return {
+            "instance_id": str(
+                instance_payload.get("id", instance_payload.get("instance_id", instance_id))
+            ),
+            "status": instance_payload.get("actual_status", instance_payload.get("state", "unknown")),
+            "gpu_name": instance_payload.get("gpu_name"),
+            "public_ipaddr": instance_payload.get("public_ipaddr"),
+            "ports": instance_payload.get("ports", {}),
+        }
+
+    def list_instances(self) -> list[dict[str, Any]]:
+        request_exc = self._request_exception_type()
+        try:
+            response = requests.get(
+                self._url("instances"),
+                headers={"Authorization": f"Bearer {self.api_key}"},
+            )
+        except request_exc as exc:  # pragma: no cover - exercised by tests
+            raise VastProviderError(f"Vast /instances request failed: {exc}") from exc
+
+        self._raise_for_status("/instances", response, (200,))
+        payload = response.json()
+        instances = payload.get("instances", payload) if isinstance(payload, dict) else payload
+
+        if isinstance(instances, dict):
+            instances = [instances]
+        if not isinstance(instances, list):
+            raise VastProviderError("Unexpected /instances response shape")
+
+        normalized: list[dict[str, Any]] = []
+        for item in instances:
+            if not isinstance(item, dict):
+                continue
+            normalized.append(
+                {
+                    "instance_id": str(item.get("id", item.get("instance_id", ""))),
+                    "status": item.get("actual_status", item.get("state", "unknown")),
+                    "gpu_name": item.get("gpu_name"),
+                    "public_ipaddr": item.get("public_ipaddr"),
+                    "ports": item.get("ports", {}),
+                }
+            )
+        return sorted(normalized, key=lambda entry: entry["instance_id"])
+
+    def set_instance_state(self, instance_id: str, state: str) -> dict[str, Any]:
+        request_exc = self._request_exception_type()
+        try:
+            response = requests.put(
+                self._url(f"instances/{instance_id}"),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={"state": state},
+            )
+        except request_exc as exc:  # pragma: no cover - exercised by tests
+            raise VastProviderError(f"Vast state update request failed: {exc}") from exc
+        self._raise_for_status("/instances", response, (200,))
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {"status": "ok"}
 
     def destroy_instance(self, instance_id: str):
         request_exc = self._request_exception_type()

@@ -31,5 +31,22 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def create_instance(self, offer_id: str, snapshot_version: str):
+    def create_instance(
+        self,
+        offer_id: str,
+        snapshot_version: str,
+        instance_config: Any | None = None,
+    ):
         pass
+
+    def poll_instance(self, instance_id: str):
+        raise NotImplementedError
+
+    def list_instances(self):
+        raise NotImplementedError
+
+    def set_instance_state(self, instance_id: str, state: str):
+        raise NotImplementedError
+
+    def destroy_instance(self, instance_id: str):
+        raise NotImplementedError

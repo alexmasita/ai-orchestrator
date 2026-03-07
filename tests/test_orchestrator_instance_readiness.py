@@ -74,8 +74,8 @@ def _monkeypatch_common(monkeypatch, orch, readiness_stub):
     monkeypatch.setattr(orch, "select_offer", lambda *args, **kwargs: _sample_offer(), raising=False)
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _config, _models: "#!/usr/bin/env bash\nset -e\necho boot",
+        "_resolve_bootstrap_script",
+        lambda _config: "#!/usr/bin/env bash\nset -e\necho boot",
         raising=False,
     )
     monkeypatch.setattr(orch, "wait_for_instance_ready", readiness_stub, raising=False)

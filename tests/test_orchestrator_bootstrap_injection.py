@@ -77,24 +77,24 @@ def test_run_orchestration_exists_and_callable():
     assert callable(module.run_orchestration)
 
 
-def test_run_orchestration_calls_generator_and_injects_script(monkeypatch):
+def test_run_orchestration_calls_bootstrap_resolver_and_injects_script(monkeypatch):
     orch = _load_orchestrator_module()
     config = _sample_config()
     models = _sample_models()
     script = "#!/usr/bin/env bash\nset -e\necho boot"
 
     events = []
-    generator_calls = []
+    resolver_calls = []
 
-    def _fake_generate_bootstrap_script(cfg, mdl):
-        events.append("generate_bootstrap_script")
-        generator_calls.append((cfg, mdl))
+    def _fake_resolve_bootstrap_script(cfg):
+        events.append("resolve_bootstrap_script")
+        resolver_calls.append(cfg)
         return script
 
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        _fake_generate_bootstrap_script,
+        "_resolve_bootstrap_script",
+        _fake_resolve_bootstrap_script,
         raising=False,
     )
     monkeypatch.setattr(
@@ -107,8 +107,8 @@ def test_run_orchestration_calls_generator_and_injects_script(monkeypatch):
     provider = _RecordingProvider(events)
     _ = orch.run_orchestration(provider, config, models)
 
-    assert len(generator_calls) == 1
-    assert generator_calls[0] == (config, models)
+    assert len(resolver_calls) == 1
+    assert resolver_calls[0] == config
 
     assert len(provider.create_calls) == 1
     create_call = provider.create_calls[0]
@@ -120,7 +120,7 @@ def test_run_orchestration_calls_generator_and_injects_script(monkeypatch):
     assert script != ""
     assert script == script.strip()
 
-    assert events == ["generate_bootstrap_script", "create_instance"]
+    assert events == ["resolve_bootstrap_script", "create_instance"]
 
 
 @pytest.mark.parametrize("bad_script", ["", None, 123])
@@ -133,8 +133,8 @@ def test_run_orchestration_rejects_invalid_bootstrap_script(monkeypatch, bad_scr
 
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _cfg, _mdl: bad_script,
+        "_resolve_bootstrap_script",
+        lambda _cfg: bad_script,
         raising=False,
     )
     monkeypatch.setattr(
@@ -150,17 +150,17 @@ def test_run_orchestration_rejects_invalid_bootstrap_script(monkeypatch, bad_scr
     assert provider.create_calls == []
 
 
-def test_run_orchestration_propagates_generator_runtime_error(monkeypatch):
+def test_run_orchestration_propagates_resolver_runtime_error(monkeypatch):
     orch = _load_orchestrator_module()
     config = _sample_config()
     models = _sample_models()
     events = []
     provider = _RecordingProvider(events)
 
-    def _raise_runtime_error(_cfg, _mdl):
+    def _raise_runtime_error(_cfg):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(orch, "generate_bootstrap_script", _raise_runtime_error, raising=False)
+    monkeypatch.setattr(orch, "_resolve_bootstrap_script", _raise_runtime_error, raising=False)
     monkeypatch.setattr(
         orch,
         "select_offer",
@@ -181,18 +181,18 @@ def test_run_orchestration_determinism_and_instance_config_isolation(monkeypatch
     script = "#!/usr/bin/env bash\nset -e\necho boot"
 
     events = []
-    generator_calls = []
+    resolver_calls = []
     provider = _RecordingProvider(events)
 
-    def _fake_generate_bootstrap_script(cfg, mdl):
-        events.append("generate_bootstrap_script")
-        generator_calls.append((cfg, mdl))
+    def _fake_resolve_bootstrap_script(cfg):
+        events.append("resolve_bootstrap_script")
+        resolver_calls.append(cfg)
         return script
 
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        _fake_generate_bootstrap_script,
+        "_resolve_bootstrap_script",
+        _fake_resolve_bootstrap_script,
         raising=False,
     )
     monkeypatch.setattr(
@@ -206,9 +206,9 @@ def test_run_orchestration_determinism_and_instance_config_isolation(monkeypatch
     second = orch.run_orchestration(provider, config, models)
 
     assert first == second
-    assert len(generator_calls) == 2
-    assert generator_calls[0] == (config, models)
-    assert generator_calls[1] == (config, models)
+    assert len(resolver_calls) == 2
+    assert resolver_calls[0] == config
+    assert resolver_calls[1] == config
 
     assert len(provider.create_calls) == 2
     first_cfg = provider.create_calls[0]["instance_config"]
@@ -218,9 +218,9 @@ def test_run_orchestration_determinism_and_instance_config_isolation(monkeypatch
     assert id(first_cfg) != id(second_cfg)
 
     assert events == [
-        "generate_bootstrap_script",
+        "resolve_bootstrap_script",
         "create_instance",
-        "generate_bootstrap_script",
+        "resolve_bootstrap_script",
         "create_instance",
     ]
 
@@ -246,8 +246,8 @@ def test_run_orchestration_passes_provider_agnostic_requirements_and_runtime_onl
     provider = _SearchProvider(events)
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _cfg, _mdl: script,
+        "_resolve_bootstrap_script",
+        lambda _cfg: script,
         raising=False,
     )
 

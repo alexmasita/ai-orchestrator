@@ -87,8 +87,8 @@ def test_idle_timeout_seconds_is_propagated_to_provider_instance_config(monkeypa
     monkeypatch.setattr(orch, "select_offer", lambda *args, **kwargs: _sample_offer(), raising=False)
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _config, _models: script,
+        "_resolve_bootstrap_script",
+        lambda _config: script,
         raising=False,
     )
 
@@ -100,22 +100,22 @@ def test_idle_timeout_seconds_is_propagated_to_provider_instance_config(monkeypa
 
 
 @pytest.mark.parametrize("bad_timeout", [0, -1, "string", None, 1800.5])
-def test_invalid_idle_timeout_raises_value_error_before_generator_and_provider(monkeypatch, bad_timeout):
+def test_invalid_idle_timeout_raises_value_error_before_resolver_and_provider(monkeypatch, bad_timeout):
     orch = _load_orchestrator_module()
     provider = _RecordingProvider()
-    generator_calls = []
+    resolver_calls = []
 
-    def _generator(_config, _models):
-        generator_calls.append(True)
+    def _resolver(_config):
+        resolver_calls.append(True)
         return "#!/usr/bin/env bash\nset -e\necho boot"
 
     monkeypatch.setattr(orch, "select_offer", lambda *args, **kwargs: _sample_offer(), raising=False)
-    monkeypatch.setattr(orch, "generate_bootstrap_script", _generator, raising=False)
+    monkeypatch.setattr(orch, "_resolve_bootstrap_script", _resolver, raising=False)
 
     with pytest.raises(ValueError):
         orch.run_orchestration(provider, _config_with_timeout(bad_timeout), _sample_models())
 
-    assert generator_calls == []
+    assert resolver_calls == []
     assert provider.create_calls == []
 
 
@@ -126,8 +126,8 @@ def test_timeout_absence_keeps_instance_config_compatible(monkeypatch):
     monkeypatch.setattr(orch, "select_offer", lambda *args, **kwargs: _sample_offer(), raising=False)
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _config, _models: "#!/usr/bin/env bash\nset -e\necho boot",
+        "_resolve_bootstrap_script",
+        lambda _config: "#!/usr/bin/env bash\nset -e\necho boot",
         raising=False,
     )
 
@@ -148,8 +148,8 @@ def test_idle_timeout_propagation_is_deterministic_with_timeout_field(monkeypatc
     monkeypatch.setattr(orch, "select_offer", lambda *args, **kwargs: _sample_offer(), raising=False)
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _config, _models: script,
+        "_resolve_bootstrap_script",
+        lambda _config: script,
         raising=False,
     )
 
@@ -172,8 +172,8 @@ def test_idle_timeout_instance_config_isolation_between_runs(monkeypatch):
     monkeypatch.setattr(orch, "select_offer", lambda *args, **kwargs: _sample_offer(), raising=False)
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _config, _models: "#!/usr/bin/env bash\nset -e\necho boot",
+        "_resolve_bootstrap_script",
+        lambda _config: "#!/usr/bin/env bash\nset -e\necho boot",
         raising=False,
     )
 

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Any
 
 from ai_orchestrator.provider.interface import ProviderInstance
 from ai_orchestrator.runtime.healthcheck import wait_for_instance_ready
-from ai_orchestrator.runtime.script import generate_bootstrap_script
+from ai_orchestrator.runtime.script import render_bootstrap_script
 
 
 class OfferSelectionError(Exception):
@@ -14,6 +15,74 @@ class OfferSelectionError(Exception):
 
 MAX_BOOTSTRAP_SCRIPT_BYTES = 16384
 DEFAULT_INSTANCE_READY_TIMEOUT_SECONDS = 30
+
+
+def resolve_combo_endpoints(
+    instance_payload: dict[str, Any],
+    combo_manifest: dict[str, Any],
+) -> dict[str, str]:
+    services = combo_manifest.get("services", {})
+    if not isinstance(services, dict):
+        services = {}
+
+    ordered_service_names: list[str] = []
+    preferred_order = ("architect", "developer", "stt", "tts", "control")
+    for service_name in preferred_order:
+        if service_name in services:
+            ordered_service_names.append(service_name)
+    for service_name in sorted(services.keys()):
+        if service_name not in ordered_service_names:
+            ordered_service_names.append(service_name)
+
+    public_ip = instance_payload.get("public_ipaddr") or instance_payload.get("public_ip")
+    ports = instance_payload.get("ports", {})
+    if not isinstance(ports, dict):
+        ports = {}
+
+    resolved: dict[str, str] = {}
+    for service_name in ordered_service_names:
+        service_payload = services.get(service_name, {})
+        if not isinstance(service_payload, dict):
+            continue
+        raw_port = service_payload.get("port")
+        try:
+            container_port = int(raw_port)
+        except (TypeError, ValueError):
+            continue
+
+        mapping_key = f"{container_port}/tcp"
+        mapping_payload = ports.get(mapping_key)
+        if not isinstance(mapping_payload, list) or len(mapping_payload) == 0:
+            continue
+        first_mapping = mapping_payload[0]
+        if not isinstance(first_mapping, dict):
+            continue
+        host_port = first_mapping.get("HostPort")
+        if host_port in (None, ""):
+            continue
+        if public_ip in (None, ""):
+            continue
+
+        resolved[f"{service_name}_url"] = f"http://{public_ip}:{host_port}"
+
+    return resolved
+
+
+def is_instance_ready(instance_payload: dict[str, Any], control_health_ok: bool) -> bool:
+    status = None
+    if isinstance(instance_payload, dict):
+        status = instance_payload.get("actual_status")
+    return status == "running" and bool(control_health_ok)
+
+
+def _resolve_bootstrap_script(config: dict) -> str:
+    raw_script = config.get("bootstrap_script")
+    if not isinstance(raw_script, str):
+        raw_script = "#!/usr/bin/env bash\nset -e"
+    bootstrap_env = config.get("bootstrap_env", {})
+    if not isinstance(bootstrap_env, dict):
+        bootstrap_env = {}
+    return render_bootstrap_script(raw_script, bootstrap_env)
 
 
 def _debug_enabled() -> bool:
@@ -102,6 +171,27 @@ def _build_provider_requirements(cfg: dict, required_vram_gb: int) -> dict:
     return requirements
 
 
+def build_vast_search_requirements(config: dict) -> dict:
+    cfg = config if isinstance(config, dict) else {}
+    gpu_cfg = cfg.get("gpu", {})
+    if not isinstance(gpu_cfg, dict):
+        raise ValueError("gpu must be a mapping in runtime config")
+    if "min_vram_gb" not in gpu_cfg:
+        raise ValueError("gpu.min_vram_gb is required for offer search")
+
+    raw_required_vram = gpu_cfg["min_vram_gb"]
+    if isinstance(raw_required_vram, bool):
+        raise ValueError("gpu.min_vram_gb must be an int-like value")
+    try:
+        required_vram = float(raw_required_vram)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("gpu.min_vram_gb must be an int-like value") from exc
+    if not required_vram.is_integer() or required_vram <= 0:
+        raise ValueError("gpu.min_vram_gb must be a positive int-like value")
+
+    return _build_provider_requirements(cfg, int(required_vram))
+
+
 def select_offer(
     provider_or_offers,
     sizing_result=None,
@@ -174,8 +264,8 @@ def run_orchestration(
             "snapshot_version": effective_snapshot_version,
         }
 
-    script = generate_bootstrap_script(cfg, model_list)
-    if not isinstance(script, str) or script == "" or script != script.strip():
+    script = _resolve_bootstrap_script(cfg)
+    if not isinstance(script, str) or script.strip() == "":
         raise ValueError("Invalid bootstrap script")
     script_bytes = script.encode("utf-8")
     if len(script_bytes) > MAX_BOOTSTRAP_SCRIPT_BYTES:

@@ -1,0 +1,19 @@
+schema_version: 1
+name: reasoning_80gb
+provider: vast
+services:
+  architect:
+    port: 8080
+    health_path: /health
+  developer:
+    port: 8081
+    health_path: /health
+  stt:
+    port: 9000
+    health_path: /
+  tts:
+    port: 9001
+    health_path: /
+  control:
+    port: 7999
+    health_path: /health

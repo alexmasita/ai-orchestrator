@@ -10,7 +10,13 @@ class MockProvider(Provider):
     def search_offers(self, requirements):
         return list(self._offers)
 
-    def create_instance(self, offer_id: str, snapshot_version: str):
+    def create_instance(
+        self,
+        offer_id: str,
+        snapshot_version: str,
+        instance_config=None,
+    ):
+        _ = snapshot_version, instance_config
         for offer in self._offers:
             if offer.id == offer_id:
                 return ProviderInstance(

@@ -4,7 +4,7 @@ import importlib
 
 import pytest
 
-from ai_orchestrator.runtime.script import generate_bootstrap_script
+from ai_orchestrator.runtime.script import render_bootstrap_script
 
 
 ORCHESTRATOR_MODULE = "ai_orchestrator.orchestrator"
@@ -29,10 +29,6 @@ def _sample_config():
         "allow_interruptible": True,
         "max_dph": 2.00,
     }
-
-
-def _sample_models():
-    return ["deepseek_llamacpp", "whisper"]
 
 
 def _sample_offer():
@@ -66,12 +62,12 @@ class _RecordingProvider:
         )
 
 
-def test_generate_bootstrap_script_import_contract_callable():
-    assert callable(generate_bootstrap_script)
+def test_render_bootstrap_script_import_contract_callable():
+    assert callable(render_bootstrap_script)
 
 
-def test_generate_bootstrap_script_byte_length_within_limit():
-    script = generate_bootstrap_script(_sample_config(), _sample_models())
+def test_render_bootstrap_script_byte_length_within_limit():
+    script = render_bootstrap_script("#!/usr/bin/env bash\nset -e\necho boot\n", {"A": "1", "B": "2"})
     assert len(script.encode("utf-8")) <= 16384
 
 
@@ -81,8 +77,8 @@ def test_run_orchestration_rejects_oversized_script(monkeypatch):
 
     monkeypatch.setattr(
         orch,
-        "generate_bootstrap_script",
-        lambda _config, _models: "A" * 20000,
+        "_resolve_bootstrap_script",
+        lambda _config: "A" * 20000,
         raising=False,
     )
     monkeypatch.setattr(
@@ -93,18 +89,19 @@ def test_run_orchestration_rejects_oversized_script(monkeypatch):
     )
 
     with pytest.raises(ValueError):
-        orch.run_orchestration(provider, _sample_config(), _sample_models())
+        orch.run_orchestration(provider, _sample_config(), ["deepseek_llamacpp", "whisper"])
 
     assert provider.create_calls == []
 
 
-def test_generate_bootstrap_script_is_utf8_encodable():
-    script = generate_bootstrap_script(_sample_config(), _sample_models())
+def test_render_bootstrap_script_is_utf8_encodable():
+    script = render_bootstrap_script("#!/usr/bin/env bash\nset -e\necho boot\n", {"A": "1"})
     encoded = script.encode("utf-8")
     assert isinstance(encoded, bytes)
 
 
-def test_generate_bootstrap_script_is_deterministic_for_identical_inputs():
-    first = generate_bootstrap_script(_sample_config(), _sample_models())
-    second = generate_bootstrap_script(_sample_config(), _sample_models())
+def test_render_bootstrap_script_is_deterministic_for_identical_inputs():
+    base_script = "#!/usr/bin/env bash\nset -e\necho boot\n"
+    first = render_bootstrap_script(base_script, {"A": "1", "B": "2"})
+    second = render_bootstrap_script(base_script, {"A": "1", "B": "2"})
     assert first == second
