@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PYTHONUNBUFFERED=1
+
 # ============================================
 # UNIVERSAL PATH DETECTION
 # ============================================
@@ -275,10 +277,13 @@ if [ ! -f "$SETUP_MARKER" ]; then
     update_state "python_install" "running" "Installing vLLM, faster-whisper-server, and Python dependencies"
     pip install -q --no-cache-dir \
         vllm \
-        faster-whisper-server \
+        faster-whisper \
         huggingface_hub \
-        kokoro-tts \
-        tomli 
+        fastapi \
+        uvicorn \
+        httpx \
+        tomli
+
     update_state "python_install" "complete" "Python dependencies installed"
 
     update_state "architect_download" "running" "Downloading architect model"
@@ -310,6 +315,8 @@ vllm serve "$MODELS_DIR/architect" \
     --dtype float16 \
     --served-model-name architect &
 
+wait_for_port $ARCHITECT_PORT "architect" 300
+
 update_state "developer_server" "starting" "Launching Developer vLLM on port $DEVELOPER_PORT"
 vllm serve "$MODELS_DIR/developer" \
     --port $DEVELOPER_PORT \
@@ -318,19 +325,55 @@ vllm serve "$MODELS_DIR/developer" \
     --dtype float16 \
     --served-model-name developer &
 
-update_state "stt_server" "starting" "Launching faster-whisper-server (CPU) on port $WHISPER_PORT"
+update_state "stt_server" "starting" "Launching Faster-Whisper STT on port $WHISPER_PORT"
 
-WHISPER__MODEL=large-v3 \
-WHISPER__DEVICE=cpu \
-WHISPER__COMPUTE_TYPE=int8 \
-WHISPER__MODEL_DIR="$MODELS_DIR/whisper" \
-uvicorn faster_whisper_server.main:app \
+cat > "$BASE_DIR/stt_server.py" <<PY
+from faster_whisper import WhisperModel
+from fastapi import FastAPI, UploadFile, File
+import tempfile
+
+model = WhisperModel("large-v3", device="cpu", compute_type="int8")
+
+app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/v1/audio/transcriptions")
+async def transcribe(file: UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        f.write(await file.read())
+        path=f.name
+
+    segments,_ = model.transcribe(path)
+
+    text=" ".join([s.text for s in segments])
+
+    return {"text":text}
+PY
+
+uvicorn stt_server:app \
     --host 0.0.0.0 \
     --port $WHISPER_PORT &
 
 update_state "tts_server" "starting" "Launching Kokoro TTS on port $TTS_PORT"
 
-python3 -m kokoro_fastapi \
+cd "$BASE_DIR"
+
+if [ ! -d "kokoro-fastapi" ]; then
+    git clone https://github.com/remsky/Kokoro-FastAPI.git kokoro-fastapi
+fi
+
+cd kokoro-fastapi
+
+pip install -q uv
+
+uv pip install -e ".[gpu]" || true
+
+python docker/scripts/download_model.py --output api/src/models/v1_0
+
+uvicorn api.src.main:app \
     --host 0.0.0.0 \
     --port $TTS_PORT &
 
