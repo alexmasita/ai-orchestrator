@@ -250,6 +250,11 @@ if [ ! -f "$SETUP_MARKER" ]; then
     # --- DOWNLOAD ARCHITECT MODEL ---
     update_state "architect_download" "running" "Downloading Architect model: $ARCHITECT_MODEL"
     mkdir -p "$MODELS_DIR"
+
+    # Ensure subdirectories exist for all model families
+    mkdir -p "$MODELS_DIR/whisper"
+    mkdir -p "$MODELS_DIR/kokoro"
+
     if [ ! -d "$MODELS_DIR/architect" ] || [ -z "$(ls -A "$MODELS_DIR/architect" 2>/dev/null)" ]; then
         huggingface-cli download "$ARCHITECT_MODEL" \
             --local-dir "$MODELS_DIR/architect"

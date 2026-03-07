@@ -96,6 +96,37 @@ def test_create_instance_payload_enforces_port_mappings(_vast_with_put_recorder)
     assert payload["env"]["-p 9000:9000"] == "1"
 
 
+def test_create_instance_payload_defaults_image_when_missing(_vast_with_put_recorder):
+    _vast, calls, _ = _vast_with_put_recorder
+    provider = _vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")
+
+    provider.create_instance(
+        "offer123",
+        "snapshot-v1",
+        {"bootstrap_script": "echo boot"},
+    )
+
+    payload = calls["put"][0]["json"]
+    assert payload["image"] == "vllm/vllm-openai:latest"
+
+
+def test_create_instance_payload_preserves_image_override(_vast_with_put_recorder):
+    _vast, calls, _ = _vast_with_put_recorder
+    provider = _vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")
+
+    provider.create_instance(
+        "offer123",
+        "snapshot-v1",
+        {
+            "bootstrap_script": "echo boot",
+            "image": "custom/image:tag",
+        },
+    )
+
+    payload = calls["put"][0]["json"]
+    assert payload["image"] == "custom/image:tag"
+
+
 def test_create_instance_preserves_bootstrap_script_exactly(_vast_with_put_recorder):
     vast, calls, _ = _vast_with_put_recorder
     provider = vast.VastProvider(api_key="k-test", base_url="https://vast.example/api/v0")

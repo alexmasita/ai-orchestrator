@@ -496,8 +496,9 @@ class VastProvider(Provider):
                         continue
                     env_payload[key] = str(raw_env[raw_key])
 
+            image = instance_config.get("image") or "vllm/vllm-openai:latest"
             payload = {
-                "image": "ubuntu:22.04",
+                "image": image,
                 "runtype": "ssh_direct",
                 "env": env_payload,
                 "onstart": onstart_payload,
