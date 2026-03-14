@@ -7,6 +7,7 @@ gpu:
   # if you want interpret + rerank + STT and optional dormant TTS readiness.
   min_vram_gb: 79
   preferred_models:
+    - A800_PCIE
     - A100_SXM
     - A100_PCIE
     - H100_PCIE
@@ -15,12 +16,12 @@ gpu:
 # Relaxed networking for dev/interruptible marketplace usage.
 min_inet_down_mbps: 250
 min_inet_up_mbps: 100
-min_reliability: 0.92
+min_reliability: 0.90
 verified_only: true
 
 # Dev-cost-first posture.
 max_dph: 1.00
-allow_interruptible: true
+allow_interruptible: false
 limit: 1
 
 idle_timeout_seconds: 1200
@@ -32,4 +33,4 @@ snapshot_version: v2-neuroflow-dev-80gb
 # Keep this comfortably above the nominal model payload to avoid mid-download failures.
 whisper_vram_gb: 4
 whisper_disk_gb: 5
-min_disk_gb: 180
+min_disk_gb: 120
