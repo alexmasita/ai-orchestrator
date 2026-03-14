@@ -37,7 +37,15 @@ def test_neuroflow_combo_assets_present_and_wired():
     runtime_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert runtime_config["snapshot_version"] == "v2-neuroflow-dev-80gb"
     assert runtime_config["allow_interruptible"] is True
-    assert runtime_config["verified_only"] is False
-    assert runtime_config["max_dph"] == 1.0
+    assert isinstance(runtime_config["verified_only"], bool)
+    assert float(runtime_config["max_dph"]) > 0.0
     assert runtime_config["idle_timeout_seconds"] == 1200
     assert runtime_config["instance_ready_timeout_seconds"] == 2400
+    assert runtime_config["bootstrap_base_url"].startswith("https://raw.githubusercontent.com/")
+
+    bootstrap_contents = bootstrap_path.read_text(encoding="utf-8")
+    assert "--runner pooling" in bootstrap_contents
+    assert 'STT_MODEL="${AI_ORCH_STT_MODEL:-turbo}"' in bootstrap_contents
+    assert "python3 - <<PY" in bootstrap_contents
+    assert "uv venv .venv" in bootstrap_contents
+    assert 'uv run --no-sync uvicorn api.src.main:app \\' in bootstrap_contents

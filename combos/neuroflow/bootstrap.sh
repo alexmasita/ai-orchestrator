@@ -41,7 +41,7 @@ IDLE_TIMEOUT_SECONDS="${AI_ORCH_IDLE_TIMEOUT_SECONDS:-1800}"
 INTERPRET_MODEL="${AI_ORCH_INTERPRET_MODEL:-Qwen/Qwen3-32B-AWQ}"
 REASONER_MODEL="${AI_ORCH_REASONER_MODEL:-openai/gpt-oss-20b}"
 RERANK_MODEL="${AI_ORCH_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
-STT_MODEL="${AI_ORCH_STT_MODEL:-openai/whisper-large-v3-turbo}"
+STT_MODEL="${AI_ORCH_STT_MODEL:-turbo}"
 TTS_MODEL="${AI_ORCH_TTS_MODEL:-hexgrad/Kokoro-82M}"
 
 ENABLE_REASONER="${AI_ORCH_ENABLE_REASONER:-1}"
@@ -288,7 +288,7 @@ if [ ! -f "$SETUP_MARKER" ]; then
 
     update_state "apt_install" "running" "Installing system dependencies"
     apt-get update
-    apt-get install -y ffmpeg curl git python3-pip
+    apt-get install -y espeak-ng ffmpeg curl git python3-pip python3-venv
     update_state "apt_install" "complete" "System dependencies installed"
 
     update_state "python_install" "running" "Installing NeuroFlow AI runtime dependencies"
@@ -317,6 +317,16 @@ if [ ! -f "$SETUP_MARKER" ]; then
         update_state "rerank_download" "running" "Downloading rerank model"
         hf download "$RERANK_MODEL" --local-dir "$MODELS_DIR/rerank"
         update_state "rerank_download" "complete" "Rerank model downloaded"
+    fi
+
+    if [ "$ENABLE_STT" = "1" ]; then
+        update_state "stt_download" "running" "Preloading Faster-Whisper STT model"
+        python3 - <<PY
+from faster_whisper import WhisperModel
+
+WhisperModel("${STT_MODEL}", device="cpu", compute_type="int8")
+PY
+        update_state "stt_download" "complete" "Faster-Whisper STT model ready"
     fi
 
     touch "$SETUP_MARKER"
@@ -356,11 +366,11 @@ if [ "$ENABLE_RERANK" = "1" ]; then
     update_state "rerank_server" "starting" "Launching Rerank vLLM on port $RERANK_PORT"
     vllm serve "$MODELS_DIR/rerank" \
         --port $RERANK_PORT \
+        --runner pooling \
         --gpu-memory-utilization 0.12 \
         --max-model-len 1024 \
         --dtype float16 \
-        --served-model-name rerank \
-        --task score &
+        --served-model-name rerank &
 fi
 
 if [ "$ENABLE_STT" = "1" ]; then
@@ -372,7 +382,7 @@ from fastapi import FastAPI, File, UploadFile
 import os
 import tempfile
 
-model_name = os.environ.get("AI_ORCH_STT_MODEL", "openai/whisper-large-v3-turbo")
+model_name = os.environ.get("AI_ORCH_STT_MODEL", "turbo")
 device = "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES", "") != "" else "cpu"
 compute_type = "float16" if device == "cuda" else "int8"
 
@@ -431,11 +441,24 @@ if [ "$ENABLE_TTS" = "1" ]; then
     cd kokoro-fastapi
 
     pip install -q uv
-    uv pip install -e ".[gpu]" || true
+    if [ ! -d ".venv" ]; then
+        uv venv .venv
+    fi
 
-    python docker/scripts/download_model.py --output api/src/models/v1_0
+    . .venv/bin/activate
 
-    uvicorn api.src.main:app \
+    PROJECT_ROOT=$(pwd)
+    export USE_GPU=true
+    export USE_ONNX=false
+    export PYTHONPATH=$PROJECT_ROOT:$PROJECT_ROOT/api
+    export MODEL_DIR=src/models
+    export VOICES_DIR=src/voices/v1_0
+    export WEB_PLAYER_PATH=$PROJECT_ROOT/web
+
+    uv pip install -e ".[gpu]"
+    uv run --no-sync python docker/scripts/download_model.py --output api/src/models/v1_0
+
+    uv run --no-sync uvicorn api.src.main:app \
         --host 0.0.0.0 \
         --port $TTS_PORT &
 fi

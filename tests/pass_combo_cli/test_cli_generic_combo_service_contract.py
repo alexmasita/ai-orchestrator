@@ -179,3 +179,130 @@ def test_combo_start_supports_generic_service_names(monkeypatch, capsys):
     assert payload["interpret_url"] == "http://34.1.1.1:32080"
     assert payload["reasoner_url"] == "http://34.1.1.1:32081"
     assert payload["rerank_url"] == "http://34.1.1.1:32082"
+
+
+def test_combo_start_waits_for_vast_port_mappings(monkeypatch, capsys):
+    cli = _load_cli_module()
+    assert cli is not None, "Expected ai_orchestrator.cli module"
+    assert hasattr(cli, "main"), "Expected main(argv=None) CLI entrypoint"
+
+    runtime_state = {
+        "combo_name": "neuroflow",
+        "combo_manifest": {
+            "name": "neuroflow",
+            "services": {
+                "interpret": {"port": 8080},
+                "reasoner": {"port": 8081},
+                "rerank": {"port": 8082},
+                "stt": {"port": 9000},
+                "tts": {"port": 9001},
+                "control": {"port": 7999},
+            },
+        },
+        "bootstrap_script": "#!/usr/bin/env bash\nset -e\n",
+        "runtime_config": {
+            "vast_api_key": "key-123",
+            "vast_api_url": "https://vast.example/api",
+            "snapshot_version": "v2-neuroflow-dev-80gb",
+            "idle_timeout_seconds": 1200,
+            "gpu": {"min_vram_gb": 79},
+            "max_dph": 1.0,
+            "min_reliability": 0.92,
+            "min_inet_up_mbps": 50,
+            "min_inet_down_mbps": 150,
+            "verified_only": False,
+            "allow_interruptible": True,
+            "limit": 1,
+        },
+        "ports": {
+            "interpret": 8080,
+            "reasoner": 8081,
+            "rerank": 8082,
+            "stt": 9000,
+            "tts": 9001,
+            "control": 7999,
+        },
+        "snapshot_namespace": "v2-neuroflow-dev-80gb_neuroflow",
+        "service_registry": object(),
+    }
+
+    poll_calls = {"count": 0}
+
+    class _FakeProvider:
+        def __init__(self, *args, **kwargs):
+            _ = args, kwargs
+
+        def list_instances(self):
+            return []
+
+        def search_offers(self, *_args, **_kwargs):
+            return [
+                SimpleNamespace(
+                    id="12345",
+                    gpu_name="A100_PCIE",
+                    gpu_ram_gb=80,
+                    reliability=0.95,
+                    dph=0.95,
+                    inet_up_mbps=80,
+                    inet_down_mbps=250,
+                    interruptible=True,
+                )
+            ]
+
+        def create_instance(self, *_args, **_kwargs):
+            return {
+                "instance_id": "i-neuro-123",
+                "gpu_name": "A100_PCIE",
+                "dph": 0.95,
+                "actual_status": "running",
+            }
+
+        def poll_instance(self, _instance_id):
+            poll_calls["count"] += 1
+            if poll_calls["count"] == 1:
+                return {
+                    "instance_id": "i-neuro-123",
+                    "gpu_name": "A100_PCIE",
+                    "dph": 0.95,
+                    "actual_status": "running",
+                    "public_ipaddr": "34.1.1.1",
+                    "ports": {},
+                }
+            return {
+                "instance_id": "i-neuro-123",
+                "gpu_name": "A100_PCIE",
+                "dph": 0.95,
+                "actual_status": "running",
+                "public_ipaddr": "34.1.1.1",
+                "ports": {
+                    "8080/tcp": [{"HostPort": "32080"}],
+                    "8081/tcp": [{"HostPort": "32081"}],
+                    "8082/tcp": [{"HostPort": "32082"}],
+                    "9000/tcp": [{"HostPort": "39000"}],
+                    "9001/tcp": [{"HostPort": "39001"}],
+                    "7999/tcp": [{"HostPort": "37999"}],
+                },
+            }
+
+    monkeypatch.setattr(cli, "VastProvider", _FakeProvider, raising=False)
+    monkeypatch.setattr(
+        cli,
+        "resolve_runtime_state_for_combo",
+        lambda *_a, **_k: runtime_state,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        cli,
+        "render_bootstrap_script",
+        lambda script, env: "#!/usr/bin/env bash\n# rendered sentinel\n",
+        raising=False,
+    )
+    monkeypatch.setattr(cli.time, "sleep", lambda *_a, **_k: None, raising=False)
+
+    exit_code = _invoke_main_safely(cli, ["start", "--combo", "neuroflow"])
+    assert exit_code == 0, "Expected successful combo start contract after delayed mappings"
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert poll_calls["count"] >= 2
+    assert payload["control_url"] == "http://34.1.1.1:37999"
+    assert payload["interpret_url"] == "http://34.1.1.1:32080"

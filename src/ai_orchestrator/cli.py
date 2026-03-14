@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +154,42 @@ def _instance_to_payload(instance: Any) -> dict[str, Any]:
     return payload
 
 
+def _poll_combo_endpoints_until_mapped(
+    provider: Any,
+    instance_id: str,
+    combo_manifest: dict[str, Any],
+    initial_payload: dict[str, Any],
+    *,
+    timeout_seconds: float = 45.0,
+    poll_interval_seconds: float = 2.0,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    latest_payload = dict(initial_payload)
+    latest_endpoints = resolve_combo_endpoints(latest_payload, combo_manifest)
+
+    services = combo_manifest.get("services", {}) if isinstance(combo_manifest, dict) else {}
+    expected_endpoint_count = len(services) if isinstance(services, dict) else 0
+    if expected_endpoint_count == 0 or len(latest_endpoints) >= expected_endpoint_count:
+        return latest_payload, latest_endpoints
+
+    poll_fn = getattr(provider, "poll_instance", None)
+    if not callable(poll_fn):
+        return latest_payload, latest_endpoints
+
+    deadline = time.monotonic() + float(timeout_seconds)
+    while time.monotonic() < deadline:
+        time.sleep(float(poll_interval_seconds))
+        polled = poll_fn(str(instance_id))
+        if isinstance(polled, dict):
+            latest_payload = dict(polled)
+        else:
+            latest_payload = _instance_to_payload(polled)
+        latest_endpoints = resolve_combo_endpoints(latest_payload, combo_manifest)
+        if len(latest_endpoints) >= expected_endpoint_count:
+            break
+
+    return latest_payload, latest_endpoints
+
+
 def run_combo_start(args) -> int:
     try:
         base_config = _maybe_load_combo_base_config(args.config)
@@ -237,11 +274,13 @@ def run_combo_start(args) -> int:
             else:
                 polled_payload = _instance_to_payload(latest)
 
-        endpoints = resolve_combo_endpoints(
+        combo_manifest = runtime_state.get("combo_manifest", runtime_state)
+        polled_payload, endpoints = _poll_combo_endpoints_until_mapped(
+            provider,
+            str(instance_id),
+            combo_manifest if isinstance(combo_manifest, dict) else {},
             polled_payload,
-            runtime_state.get("combo_manifest", runtime_state),
         )
-
         result = {
             "instance_id": polled_payload.get("instance_id", created_payload.get("instance_id")),
             "gpu_type": polled_payload.get("gpu_type")
@@ -255,7 +294,6 @@ def run_combo_start(args) -> int:
             "snapshot_version": snapshot_version,
             "idle_timeout": runtime_config.get("idle_timeout_seconds"),
         }
-        combo_manifest = runtime_state.get("combo_manifest", {})
         services = combo_manifest.get("services", {}) if isinstance(combo_manifest, dict) else {}
         if isinstance(services, dict):
             for service_name in sorted(services.keys()):
