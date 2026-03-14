@@ -190,6 +190,21 @@ def _poll_combo_endpoints_until_mapped(
     return latest_payload, latest_endpoints
 
 
+def _resolve_combo_endpoint_poll_timeout_seconds(runtime_config: dict[str, Any]) -> float:
+    raw_timeout = runtime_config.get("instance_ready_timeout_seconds", 45)
+    try:
+        timeout_seconds = float(raw_timeout)
+    except (TypeError, ValueError):
+        timeout_seconds = 45.0
+
+    if timeout_seconds <= 0:
+        timeout_seconds = 45.0
+
+    # Port mappings often lag instance creation slightly, but we should not block
+    # the CLI for the full service-ready timeout window.
+    return max(45.0, min(timeout_seconds, 180.0))
+
+
 def run_combo_start(args) -> int:
     try:
         base_config = _maybe_load_combo_base_config(args.config)
@@ -280,6 +295,7 @@ def run_combo_start(args) -> int:
             str(instance_id),
             combo_manifest if isinstance(combo_manifest, dict) else {},
             polled_payload,
+            timeout_seconds=_resolve_combo_endpoint_poll_timeout_seconds(runtime_config),
         )
         result = {
             "instance_id": polled_payload.get("instance_id", created_payload.get("instance_id")),

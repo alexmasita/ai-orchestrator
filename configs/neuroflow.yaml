@@ -14,8 +14,8 @@ gpu:
     - RTX_6000_Pro
 
 # Relaxed networking for dev/interruptible marketplace usage.
-min_inet_down_mbps: 250
-min_inet_up_mbps: 100
+min_inet_down_mbps: 900
+min_inet_up_mbps: 500
 min_reliability: 0.90
 verified_only: true
 
