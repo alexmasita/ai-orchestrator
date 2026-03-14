@@ -137,6 +137,7 @@ def test_search_offers_translates_generic_requirements_to_vast_payload(_vast_and
             "min_reliability": 0.98,
             "min_inet_up_mbps": 100,
             "min_inet_down_mbps": 120,
+            "min_disk_gb": 300,
             "verified_only": True,
             "require_rentable": True,
             "allow_interruptible": True,
@@ -152,6 +153,7 @@ def test_search_offers_translates_generic_requirements_to_vast_payload(_vast_and
         "reliability": {"gte": 0.98},
         "inet_up": {"gte": 100.0},
         "inet_down": {"gte": 120.0},
+        "disk_space": {"gte": 300.0},
         "verified": {"eq": True},
         "rentable": {"eq": True},
         "rented": {"eq": False},
@@ -235,6 +237,7 @@ def test_search_offers_maps_wrapped_vast_fields_to_provider_offer_fields(_vast_a
                     "dph_total": 1.10,
                     "inet_up": 200.0,
                     "inet_down": 400.0,
+                    "disk_space": 512.0,
                     "is_bid": False,
                 }
             ]
@@ -253,6 +256,7 @@ def test_search_offers_maps_wrapped_vast_fields_to_provider_offer_fields(_vast_a
     assert offer.inet_up_mbps == 200.0
     assert offer.inet_down_mbps == 400.0
     assert offer.interruptible is False
+    assert offer.disk_gb == 512.0
 
 
 def test_search_offers_prefers_id_over_ask_contract_id_when_both_present(_vast_and_calls):
@@ -505,6 +509,7 @@ def test_provider_offer_dataclass_equality_for_deterministic_comparisons():
         inet_up_mbps=500.0,
         inet_down_mbps=600.0,
         interruptible=False,
+        disk_gb=300.0,
     )
     equal = ProviderOffer(
         id="offer-1",
@@ -515,6 +520,7 @@ def test_provider_offer_dataclass_equality_for_deterministic_comparisons():
         inet_up_mbps=500.0,
         inet_down_mbps=600.0,
         interruptible=False,
+        disk_gb=300.0,
     )
     different = dataclasses.replace(left, dph=1.3)
     assert left == equal

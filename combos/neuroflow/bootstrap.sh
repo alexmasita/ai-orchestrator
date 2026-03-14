@@ -9,15 +9,20 @@ export VLLM_CPU_KVCACHE_SPACE=4
 # UNIVERSAL PATH DETECTION
 # ============================================
 
-BASE_DIR="/workspace"
-if [ ! -d "$BASE_DIR" ]; then
-    BASE_DIR="."
+if [ -d "/vllm-workspace" ]; then
+    BASE_DIR="/vllm-workspace"
+elif [ -d "/workspace" ]; then
+    BASE_DIR="/workspace"
+else
+    BASE_DIR="$(pwd)"
 fi
 
 SETUP_MARKER="$BASE_DIR/.setup_complete"
 MODELS_DIR="$BASE_DIR/models"
 STATE_FILE="$BASE_DIR/state.json"
 CONTROL_PY="$BASE_DIR/control_api.py"
+
+cd "$BASE_DIR"
 
 # ============================================
 # PORT CONFIG
@@ -115,6 +120,75 @@ wait_for_port() {
     done
 
     update_state "${name}_health_check" "ready" "$name responding on port $port"
+}
+
+download_model_snapshot() {
+    local repo_id="$1"
+    local local_dir="$2"
+    shift 2
+
+    python3 - "$repo_id" "$local_dir" "$@" <<'PY'
+from huggingface_hub import snapshot_download
+import sys
+
+repo_id = sys.argv[1]
+local_dir = sys.argv[2]
+allow_patterns = sys.argv[3:]
+
+snapshot_download(
+    repo_id=repo_id,
+    local_dir=local_dir,
+    allow_patterns=allow_patterns,
+)
+PY
+}
+
+require_file() {
+    local path="$1"
+    local stage="$2"
+    if [ ! -f "$path" ]; then
+        update_state "$stage" "failed" "Missing required file: $path"
+        exit 1
+    fi
+}
+
+require_glob() {
+    local pattern="$1"
+    local stage="$2"
+    if ! compgen -G "$pattern" > /dev/null; then
+        update_state "$stage" "failed" "Missing required files matching: $pattern"
+        exit 1
+    fi
+}
+
+validate_interpret_model_dir() {
+    local model_dir="$1"
+    local stage="$2"
+    require_file "$model_dir/config.json" "$stage"
+    require_file "$model_dir/tokenizer.json" "$stage"
+    require_file "$model_dir/tokenizer_config.json" "$stage"
+    require_file "$model_dir/model.safetensors.index.json" "$stage"
+    require_glob "$model_dir/model-*.safetensors" "$stage"
+}
+
+validate_reasoner_model_dir() {
+    local model_dir="$1"
+    local stage="$2"
+    require_file "$model_dir/config.json" "$stage"
+    require_file "$model_dir/tokenizer.json" "$stage"
+    require_file "$model_dir/tokenizer_config.json" "$stage"
+    require_file "$model_dir/special_tokens_map.json" "$stage"
+    require_file "$model_dir/model.safetensors.index.json" "$stage"
+    require_glob "$model_dir/model-*.safetensors" "$stage"
+}
+
+validate_rerank_model_dir() {
+    local model_dir="$1"
+    local stage="$2"
+    require_file "$model_dir/config.json" "$stage"
+    require_file "$model_dir/model.safetensors" "$stage"
+    require_file "$model_dir/tokenizer.json" "$stage"
+    require_file "$model_dir/tokenizer_config.json" "$stage"
 }
 
 # ============================================
@@ -304,46 +378,46 @@ if [ ! -f "$SETUP_MARKER" ]; then
     update_state "python_install" "complete" "Python dependencies installed"
 
     update_state "interpret_download" "running" "Downloading interpret model"
-    hf download "$INTERPRET_MODEL" \
-        --local-dir "$MODELS_DIR/interpret" \
-        --include "config.json" \
-        --include "generation_config.json" \
-        --include "tokenizer.json" \
-        --include "tokenizer_config.json" \
-        --include "merges.txt" \
-        --include "vocab.json" \
-        --include "model.safetensors.index.json" \
-        --include "model-*.safetensors"
+    download_model_snapshot "$INTERPRET_MODEL" "$MODELS_DIR/interpret" \
+        "config.json" \
+        "generation_config.json" \
+        "tokenizer.json" \
+        "tokenizer_config.json" \
+        "merges.txt" \
+        "vocab.json" \
+        "model.safetensors.index.json" \
+        "model-*.safetensors"
     rm -rf "$MODELS_DIR/interpret/.cache"
+    validate_interpret_model_dir "$MODELS_DIR/interpret" "interpret_download"
     update_state "interpret_download" "complete" "Interpret model downloaded"
 
     if [ "$ENABLE_REASONER" = "1" ]; then
         update_state "reasoner_download" "running" "Downloading reasoner model"
-        hf download "$REASONER_MODEL" \
-            --local-dir "$MODELS_DIR/reasoner" \
-            --include "config.json" \
-            --include "generation_config.json" \
-            --include "chat_template.jinja" \
-            --include "tokenizer.json" \
-            --include "tokenizer_config.json" \
-            --include "special_tokens_map.json" \
-            --include "model.safetensors.index.json" \
-            --include "model-*.safetensors"
+        download_model_snapshot "$REASONER_MODEL" "$MODELS_DIR/reasoner" \
+            "config.json" \
+            "generation_config.json" \
+            "chat_template.jinja" \
+            "tokenizer.json" \
+            "tokenizer_config.json" \
+            "special_tokens_map.json" \
+            "model.safetensors.index.json" \
+            "model-*.safetensors"
         rm -rf "$MODELS_DIR/reasoner/.cache"
+        validate_reasoner_model_dir "$MODELS_DIR/reasoner" "reasoner_download"
         update_state "reasoner_download" "complete" "Reasoner model downloaded"
     fi
 
     if [ "$ENABLE_RERANK" = "1" ]; then
         update_state "rerank_download" "running" "Downloading rerank model"
-        hf download "$RERANK_MODEL" \
-            --local-dir "$MODELS_DIR/rerank" \
-            --include "config.json" \
-            --include "model.safetensors" \
-            --include "sentencepiece.bpe.model" \
-            --include "tokenizer.json" \
-            --include "tokenizer_config.json" \
-            --include "special_tokens_map.json"
+        download_model_snapshot "$RERANK_MODEL" "$MODELS_DIR/rerank" \
+            "config.json" \
+            "model.safetensors" \
+            "sentencepiece.bpe.model" \
+            "tokenizer.json" \
+            "tokenizer_config.json" \
+            "special_tokens_map.json"
         rm -rf "$MODELS_DIR/rerank/.cache"
+        validate_rerank_model_dir "$MODELS_DIR/rerank" "rerank_download"
         update_state "rerank_download" "complete" "Rerank model downloaded"
     fi
 
@@ -377,8 +451,6 @@ vllm serve "$MODELS_DIR/interpret" \
     --max-model-len 8192 \
     --dtype auto \
     --served-model-name interpret &
-
-wait_for_port $INTERPRET_PORT "interpret" 300
 
 if [ "$ENABLE_REASONER" = "1" ]; then
     update_state "reasoner_server" "starting" "Launching Reasoner vLLM on port $REASONER_PORT"

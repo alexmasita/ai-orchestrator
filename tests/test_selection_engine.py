@@ -28,6 +28,7 @@ def _offers():
             inet_up_mbps=200.0,
             inet_down_mbps=400.0,
             interruptible=False,
+            disk_gb=120.0,
         ),
         interface.ProviderOffer(
             id="offer-b",
@@ -38,6 +39,7 @@ def _offers():
             inet_up_mbps=800.0,
             inet_down_mbps=800.0,
             interruptible=False,
+            disk_gb=320.0,
         ),
         interface.ProviderOffer(
             id="offer-c",
@@ -48,6 +50,7 @@ def _offers():
             inet_up_mbps=100.0,
             inet_down_mbps=150.0,
             interruptible=True,
+            disk_gb=80.0,
         ),
     ]
 
@@ -108,6 +111,14 @@ def test_selection_filters_by_max_dph():
     assert selected.id == "offer-c"
 
 
+def test_selection_filters_by_min_disk_gb():
+    orch = _load_orchestrator_module()
+    cfg = _base_config()
+    cfg["min_disk_gb"] = 300.0
+    selected = orch.select_offer(_offers(), required_vram_gb=1, config=cfg)
+    assert selected.id == "offer-b"
+
+
 def test_selection_sorting_order_dph_then_reliability_then_gpu_name():
     interface = _load_interface_module()
     orch = _load_orchestrator_module()
@@ -121,6 +132,7 @@ def test_selection_sorting_order_dph_then_reliability_then_gpu_name():
             inet_up_mbps=500.0,
             inet_down_mbps=500.0,
             interruptible=False,
+            disk_gb=500.0,
         ),
         interface.ProviderOffer(
             id="offer-y",
@@ -131,6 +143,7 @@ def test_selection_sorting_order_dph_then_reliability_then_gpu_name():
             inet_up_mbps=500.0,
             inet_down_mbps=500.0,
             interruptible=False,
+            disk_gb=500.0,
         ),
     ]
     selected = orch.select_offer(offers, required_vram_gb=1, config=_base_config())
@@ -150,6 +163,7 @@ def test_selection_explicit_tie_breaker_gpu_name_asc():
             inet_up_mbps=500.0,
             inet_down_mbps=500.0,
             interruptible=False,
+            disk_gb=500.0,
         ),
         interface.ProviderOffer(
             id="offer-2",
@@ -160,6 +174,7 @@ def test_selection_explicit_tie_breaker_gpu_name_asc():
             inet_up_mbps=500.0,
             inet_down_mbps=500.0,
             interruptible=False,
+            disk_gb=500.0,
         ),
     ]
     selected = orch.select_offer(offers, required_vram_gb=1, config=_base_config())

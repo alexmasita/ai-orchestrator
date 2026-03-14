@@ -15,6 +15,7 @@ class ProviderOffer:
     inet_up_mbps: float
     inet_down_mbps: float
     interruptible: bool
+    disk_gb: float = 0.0
 
 
 @dataclass

@@ -51,6 +51,7 @@ class VastProvider(Provider):
         "min_reliability",
         "min_inet_up_mbps",
         "min_inet_down_mbps",
+        "min_disk_gb",
         "verified_only",
         "require_rentable",
         "allow_interruptible",
@@ -170,6 +171,7 @@ class VastProvider(Provider):
         reliability = item.get("reliability2", item.get("reliability", 0.0))
         inet_up = item.get("inet_up", 0.0)
         inet_down = item.get("inet_down", 0.0)
+        disk_space = item.get("disk_space", item.get("disk", 0.0))
         interruptible = item.get("interruptible")
         if interruptible is None:
             interruptible = bool(item.get("is_bid", False))
@@ -183,6 +185,7 @@ class VastProvider(Provider):
             inet_up_mbps=float(inet_up),
             inet_down_mbps=float(inet_down),
             interruptible=bool(interruptible),
+            disk_gb=float(disk_space or 0.0),
         )
 
     @staticmethod
@@ -315,6 +318,8 @@ class VastProvider(Provider):
             payload["inet_up"] = {"gte": float(requirements["min_inet_up_mbps"])}
         if "min_inet_down_mbps" in requirements:
             payload["inet_down"] = {"gte": float(requirements["min_inet_down_mbps"])}
+        if "min_disk_gb" in requirements:
+            payload["disk_space"] = {"gte": float(requirements["min_disk_gb"])}
 
         verified_only = requirements.get("verified_only")
         if verified_only is not None:

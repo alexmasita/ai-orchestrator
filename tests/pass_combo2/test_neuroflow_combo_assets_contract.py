@@ -50,6 +50,8 @@ def test_neuroflow_combo_assets_present_and_wired():
     assert "python3 - <<PY" in bootstrap_contents
     assert "uv venv .venv" in bootstrap_contents
     assert 'uv run --no-sync uvicorn api.src.main:app \\' in bootstrap_contents
-    assert '--include "chat_template.jinja"' in bootstrap_contents
-    assert '--include "model.safetensors"' in bootstrap_contents
+    assert 'if [ -d "/vllm-workspace" ]; then' in bootstrap_contents
+    assert "download_model_snapshot()" in bootstrap_contents
+    assert "snapshot_download(" in bootstrap_contents
+    assert 'validate_interpret_model_dir "$MODELS_DIR/interpret" "interpret_download"' in bootstrap_contents
     assert 'rm -rf "$MODELS_DIR/rerank/.cache"' in bootstrap_contents

@@ -139,6 +139,7 @@ def _ordered_offers(offers, required_vram: int, cfg: dict):
     min_inet_down_mbps = cfg["min_inet_down_mbps"]
     allow_interruptible = cfg["allow_interruptible"]
     max_dph = cfg["max_dph"]
+    min_disk_gb = float(cfg.get("min_disk_gb", 0.0) or 0.0)
 
     filtered = []
     for offer in offers:
@@ -154,6 +155,8 @@ def _ordered_offers(offers, required_vram: int, cfg: dict):
             continue
         if offer.dph > max_dph:
             continue
+        if float(getattr(offer, "disk_gb", 0.0) or 0.0) < min_disk_gb:
+            continue
         filtered.append(offer)
     return sorted(filtered, key=lambda offer: (offer.dph, -offer.reliability, offer.gpu_name))
 
@@ -168,6 +171,8 @@ def _build_provider_requirements(cfg: dict, required_vram_gb: int) -> dict:
         "allow_interruptible": cfg["allow_interruptible"],
         "require_rentable": True,
     }
+    if "min_disk_gb" in cfg:
+        requirements["min_disk_gb"] = float(cfg["min_disk_gb"])
     if "verified_only" in cfg:
         requirements["verified_only"] = bool(cfg["verified_only"])
     if "idle_timeout_seconds" in cfg:

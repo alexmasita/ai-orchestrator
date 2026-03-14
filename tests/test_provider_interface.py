@@ -30,6 +30,7 @@ def test_provider_offer_dataclass_exists_with_exact_fields():
         "inet_up_mbps",
         "inet_down_mbps",
         "interruptible",
+        "disk_gb",
     }
 
 
@@ -44,6 +45,7 @@ def test_provider_offer_value_types():
         inet_up_mbps=500.0,
         inet_down_mbps=700.0,
         interruptible=False,
+        disk_gb=350.0,
     )
 
     assert isinstance(offer.gpu_ram_gb, int)
@@ -52,6 +54,7 @@ def test_provider_offer_value_types():
     assert isinstance(offer.inet_up_mbps, float)
     assert isinstance(offer.inet_down_mbps, float)
     assert isinstance(offer.interruptible, bool)
+    assert isinstance(offer.disk_gb, float)
 
 
 def test_provider_instance_dataclass_exists():
