@@ -1,0 +1,22 @@
+schema_version: 1
+name: neuroflow
+provider: vast
+services:
+  interpret:
+    port: 8080
+    health_path: /health
+  reasoner:
+    port: 8081
+    health_path: /health
+  rerank:
+    port: 8082
+    health_path: /health
+  stt:
+    port: 9000
+    health_path: /health
+  tts:
+    port: 9001
+    health_path: /
+  control:
+    port: 7999
+    health_path: /health

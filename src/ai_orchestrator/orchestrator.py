@@ -26,7 +26,16 @@ def resolve_combo_endpoints(
         services = {}
 
     ordered_service_names: list[str] = []
-    preferred_order = ("architect", "developer", "stt", "tts", "control")
+    preferred_order = (
+        "architect",
+        "developer",
+        "interpret",
+        "reasoner",
+        "rerank",
+        "stt",
+        "tts",
+        "control",
+    )
     for service_name in preferred_order:
         if service_name in services:
             ordered_service_names.append(service_name)

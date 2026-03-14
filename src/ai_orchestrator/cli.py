@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -116,12 +117,15 @@ def _build_combo_bootstrap_env(runtime_state: dict[str, Any]) -> dict[str, str]:
             return
         env[name] = str(value)
 
-    _maybe_set("AI_ORCH_ARCHITECT_PORT", ports.get("architect"))
-    _maybe_set("AI_ORCH_DEVELOPER_PORT", ports.get("developer"))
-    _maybe_set("AI_ORCH_STT_PORT", ports.get("stt"))
-    _maybe_set("AI_ORCH_TTS_PORT", ports.get("tts"))
-    _maybe_set("AI_ORCH_CONTROL_PORT", ports.get("control"))
-    _maybe_set("AI_ORCH_IDLE_TIMEOUT", runtime_config.get("idle_timeout_seconds"))
+    for service_name in sorted(ports.keys()):
+        normalized_service = re.sub(r"[^A-Za-z0-9]+", "_", str(service_name)).strip("_").upper()
+        if normalized_service == "":
+            continue
+        _maybe_set(f"AI_ORCH_{normalized_service}_PORT", ports.get(service_name))
+
+    idle_timeout_seconds = runtime_config.get("idle_timeout_seconds")
+    _maybe_set("AI_ORCH_IDLE_TIMEOUT", idle_timeout_seconds)
+    _maybe_set("AI_ORCH_IDLE_TIMEOUT_SECONDS", idle_timeout_seconds)
 
     return {key: env[key] for key in sorted(env.keys())}
 
@@ -178,9 +182,10 @@ def run_combo_start(args) -> int:
             return 1
 
         raw_bootstrap_script = str(runtime_state.get("bootstrap_script", ""))
+        bootstrap_env = _build_combo_bootstrap_env(runtime_state)
         rendered_bootstrap_script = render_bootstrap_script(
             raw_bootstrap_script,
-            _build_combo_bootstrap_env(runtime_state),
+            bootstrap_env,
         )
 
         instance_config: dict[str, Any] = {
@@ -195,10 +200,11 @@ def run_combo_start(args) -> int:
         instance_config["runtime_config"] = {"bootstrap_base_url": runtime_config.get("bootstrap_base_url")}
         if runtime_config.get("min_disk_gb") is not None:
             instance_config["disk"] = runtime_config["min_disk_gb"]
+        instance_env = dict(bootstrap_env)
         if runtime_config.get("idle_timeout_seconds") is not None:
-            instance_config["env"] = {
-                "IDLE_TIMEOUT_SECONDS": str(runtime_config["idle_timeout_seconds"])
-            }
+            instance_env["IDLE_TIMEOUT_SECONDS"] = str(runtime_config["idle_timeout_seconds"])
+        if instance_env:
+            instance_config["env"] = instance_env
 
         search_requirements = build_vast_search_requirements(runtime_config)
         selected_offer = select_offer(
@@ -246,14 +252,14 @@ def run_combo_start(args) -> int:
             or polled_payload.get("dph")
             or created_payload.get("cost_per_hour")
             or created_payload.get("dph"),
-            "architect_url": endpoints.get("architect_url"),
-            "developer_url": endpoints.get("developer_url"),
-            "stt_url": endpoints.get("stt_url"),
-            "tts_url": endpoints.get("tts_url"),
-            "control_url": endpoints.get("control_url"),
             "snapshot_version": snapshot_version,
             "idle_timeout": runtime_config.get("idle_timeout_seconds"),
         }
+        combo_manifest = runtime_state.get("combo_manifest", {})
+        services = combo_manifest.get("services", {}) if isinstance(combo_manifest, dict) else {}
+        if isinstance(services, dict):
+            for service_name in sorted(services.keys()):
+                result[f"{service_name}_url"] = endpoints.get(f"{service_name}_url")
         print(format_json_output(result), end="")
         return 0
     except ConfigError as exc:
