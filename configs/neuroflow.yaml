@@ -13,13 +13,13 @@ gpu:
     - RTX_6000_Pro
 
 # Relaxed networking for dev/interruptible marketplace usage.
-min_inet_down_mbps: 400
+min_inet_down_mbps: 250
 min_inet_up_mbps: 100
 min_reliability: 0.92
 verified_only: true
 
 # Dev-cost-first posture.
-max_dph: 0.80
+max_dph: 1.00
 allow_interruptible: true
 limit: 1
 
@@ -32,4 +32,4 @@ snapshot_version: v2-neuroflow-dev-80gb
 # Keep this comfortably above the nominal model payload to avoid mid-download failures.
 whisper_vram_gb: 4
 whisper_disk_gb: 5
-min_disk_gb: 300
+min_disk_gb: 180
