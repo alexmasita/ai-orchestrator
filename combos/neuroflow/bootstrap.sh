@@ -362,7 +362,7 @@ if [ ! -f "$SETUP_MARKER" ]; then
 
     update_state "apt_install" "running" "Installing system dependencies"
     apt-get update
-    apt-get install -y espeak-ng ffmpeg curl git python3-pip python3-venv
+    apt-get install -y espeak-ng ffmpeg curl git python3-pip python3-venv python3.10-dev
     update_state "apt_install" "complete" "System dependencies installed"
 
     update_state "python_install" "running" "Installing NeuroFlow AI runtime dependencies"
@@ -555,7 +555,9 @@ if [ "$ENABLE_TTS" = "1" ]; then
     export VOICES_DIR=src/voices/v1_0
     export WEB_PLAYER_PATH=$PROJECT_ROOT/web
 
+    update_state "tts_dependencies" "running" "Installing Kokoro GPU runtime dependencies"
     uv pip install -e ".[gpu]"
+    update_state "tts_dependencies" "complete" "Kokoro GPU runtime dependencies installed"
     uv run --no-sync python docker/scripts/download_model.py --output api/src/models/v1_0
 
     uv run --no-sync uvicorn api.src.main:app \

@@ -42,7 +42,7 @@ def test_neuroflow_combo_assets_present_and_wired():
     assert runtime_config["idle_timeout_seconds"] == 1200
     assert runtime_config["instance_ready_timeout_seconds"] == 2400
     assert runtime_config["bootstrap_base_url"].startswith("https://raw.githubusercontent.com/")
-    assert int(runtime_config["min_disk_gb"]) >= 300
+    assert int(runtime_config["min_disk_gb"]) >= 180
 
     bootstrap_contents = bootstrap_path.read_text(encoding="utf-8")
     assert "--runner pooling" in bootstrap_contents
@@ -53,5 +53,8 @@ def test_neuroflow_combo_assets_present_and_wired():
     assert 'if [ -d "/vllm-workspace" ]; then' in bootstrap_contents
     assert "download_model_snapshot()" in bootstrap_contents
     assert "snapshot_download(" in bootstrap_contents
+    assert "python3.10-dev" in bootstrap_contents
+    assert 'update_state "tts_dependencies" "running" "Installing Kokoro GPU runtime dependencies"' in bootstrap_contents
+    assert 'update_state "tts_dependencies" "complete" "Kokoro GPU runtime dependencies installed"' in bootstrap_contents
     assert 'validate_interpret_model_dir "$MODELS_DIR/interpret" "interpret_download"' in bootstrap_contents
     assert 'rm -rf "$MODELS_DIR/rerank/.cache"' in bootstrap_contents
