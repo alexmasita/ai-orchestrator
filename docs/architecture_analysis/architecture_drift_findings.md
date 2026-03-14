@@ -1,0 +1,25 @@
+# Architecture Drift Findings
+
+This report identifies concepts present in documentation but missing or only partially represented in code.
+
+| Concept name | Referenced documents | Partially implemented? | Evidence in current repo | Likely future implementation files/directories |
+|---|---|---|---|---|
+| Session Manager | `docs/architecture_v2/00_overview/system_layers.md`; `docs/architecture_v2/02_phase_1_orchestrator_core/architecture.md`; `docs/architecture_v2/02_phase_1_orchestrator_core/api_surface.md` | Partial | State-file utilities exist but no session CRUD/state machine APIs (`src/ai_orchestrator/core/state_manager.py`, `src/ai_orchestrator/cli.py`) | `src/ai_orchestrator/session/`, `src/ai_orchestrator/api/` |
+| Model Runtime Manager | `docs/architecture_v2/03_phase_2_model_runtime_manager/architecture.md`; `docs/architecture_v2/03_phase_2_model_runtime_manager/runtime_contract.md` | Partial | Runtime provisioning exists via provider + combo bootstrap (`src/ai_orchestrator/provider/vast.py`, `src/ai_orchestrator/core/combo_manager.py`, `combos/reasoning_80gb/bootstrap.sh`), but no dedicated load/unload/swap manager | `src/ai_orchestrator/runtime_manager/` |
+| Agent Loop Supervisor | `docs/architecture_v2/04_phase_3_agent_loop/architecture.md`; `docs/architecture_v2/04_phase_3_agent_loop/loop_supervisor.md` | No | No architect/developer iterative supervisor in source (`src/ai_orchestrator/cli.py`, `src/ai_orchestrator/orchestrator.py`) | `src/ai_orchestrator/agent_loop/` |
+| RepoMutationEngine abstraction | `docs/architecture_v2/06_phase_5_repo_interaction/repo_mutation_engine.md`; `docs/architecture_v2/00_overview/system_layers.md` | No | No mutation engine interface for draft/apply/finalize/push; only local state-file writes (`src/ai_orchestrator/core/state_manager.py`) | `src/ai_orchestrator/repo_engine/` |
+| LocalRepoEngine (MVP abstraction) | `docs/architecture_v2/06_phase_5_repo_interaction/local_repo_engine.md`; `docs/architecture_v2/04_phase_3_agent_loop/mvp_loop_design.md` | No | No such implementation in source tree | `src/ai_orchestrator/repo_engine/local.py` |
+| Tool Execution Gateway | `docs/architecture_v2/05_phase_4_tool_execution_layer/architecture.md`; `docs/architecture_v2/05_phase_4_tool_execution_layer/tool_contracts.md` | No | No schema-driven tool-request executor with allowlist/timeout output contract | `src/ai_orchestrator/tools/` |
+| Packet Schemas (ArchitectPlan, DeveloperPatch, FailurePacket) | `docs/architecture_v2/04_phase_3_agent_loop/packet_schemas.md`; `docs/architecture_v2/ai_orchestrator_protocol.md` | No | Packet types are not implemented as runtime schemas/models in source | `src/ai_orchestrator/protocol/`, `src/ai_orchestrator/schemas/` |
+| Verification Loop subsystem | `docs/architecture_v2/04_phase_3_agent_loop/architecture.md`; `docs/architecture_v2/04_phase_3_agent_loop/testing_strategy.md` | Partial | Verification exists only as readiness and test contracts, not as orchestrated loop phase (`src/ai_orchestrator/runtime/healthcheck.py`, `tests/`) | `src/ai_orchestrator/verification/` |
+| Failure Packet handling | `docs/architecture_v2/04_phase_3_agent_loop/packet_schemas.md`; `docs/architecture_v2/07_phase_6_autonomous_supervisor/failure_modes.md` | No | No typed failure packet lifecycle in current runtime code | `src/ai_orchestrator/agent_loop/failures.py` |
+| Governance / Autonomy policy engine | `docs/architecture_v2/07_phase_6_autonomous_supervisor/autonomy_modes.md`; `docs/architecture_v2/10_observability_and_governance/governance_model.md` | No | No autonomy mode policy, escalation thresholds, or kill-switch subsystem | `src/ai_orchestrator/governance/` |
+| Telemetry event schema layer | `docs/architecture_v2/10_observability_and_governance/telemetry_architecture.md` | Partial | Ad-hoc debug logging exists (`src/ai_orchestrator/orchestrator.py`, `src/ai_orchestrator/provider/vast.py`) but no structured event schema/correlation IDs | `src/ai_orchestrator/telemetry/` |
+| CDOSMutationEngine adapter | `docs/architecture_v2/08_cdos_integration_layer/cdos_integration_spec.md`; `docs/architecture_v2/08_cdos_integration_layer/transition_plan.md` | No | No CDOS adapter/integration module present | `src/ai_orchestrator/integrations/cdos/` |
+| Prompt Registry | `docs/architecture_v2/09_self_improvement_layer/prompt_registry.md` | No | No versioned prompt registry in source | `src/ai_orchestrator/improvement/prompts/` |
+| Policy Registry | `docs/architecture_v2/09_self_improvement_layer/policy_registry.md` | No | No execution-policy registry/versioned policy store in source | `src/ai_orchestrator/improvement/policies/` |
+
+## Drift pattern summary
+- Current implementation centers on provider provisioning + combo bootstrap + readiness checks.
+- Draft architecture centers on sessioned, packetized, supervised autonomous loops.
+- The largest drift is between infrastructure orchestration behavior already implemented and cognition/governance/mutation-abstraction layers not yet implemented.
