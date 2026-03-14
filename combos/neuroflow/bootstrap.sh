@@ -447,20 +447,12 @@ start_control_api
 update_state "interpret_server" "starting" "Launching Interpret vLLM on port $INTERPRET_PORT"
 vllm serve "$MODELS_DIR/interpret" \
     --port $INTERPRET_PORT \
-    --gpu-memory-utilization 0.42 \
+    --gpu-memory-utilization 0.38 \
     --max-model-len 8192 \
     --dtype auto \
     --served-model-name interpret &
 
-if [ "$ENABLE_REASONER" = "1" ]; then
-    update_state "reasoner_server" "starting" "Launching Reasoner vLLM on port $REASONER_PORT"
-    vllm serve "$MODELS_DIR/reasoner" \
-        --port $REASONER_PORT \
-        --gpu-memory-utilization 0.22 \
-        --max-model-len 8192 \
-        --dtype auto \
-        --served-model-name reasoner &
-fi
+wait_for_port $INTERPRET_PORT "interpret" 300
 
 if [ "$ENABLE_RERANK" = "1" ]; then
     update_state "rerank_server" "starting" "Launching Rerank vLLM on port $RERANK_PORT"
@@ -471,6 +463,19 @@ if [ "$ENABLE_RERANK" = "1" ]; then
         --max-model-len 1024 \
         --dtype float16 \
         --served-model-name rerank &
+    wait_for_port $RERANK_PORT "rerank" 180
+fi
+
+if [ "$ENABLE_REASONER" = "1" ]; then
+    update_state "reasoner_server" "starting" "Launching Reasoner vLLM on port $REASONER_PORT"
+    vllm serve "$MODELS_DIR/reasoner" \
+        --port $REASONER_PORT \
+        --gpu-memory-utilization 0.25 \
+        --max-model-len 4096 \
+        --enforce-eager \
+        --dtype auto \
+        --served-model-name reasoner &
+    wait_for_port $REASONER_PORT "reasoner" 300
 fi
 
 if [ "$ENABLE_STT" = "1" ]; then
@@ -527,6 +532,7 @@ PY
     uvicorn stt_server:app \
         --host 0.0.0.0 \
         --port $STT_PORT &
+    wait_for_port $STT_PORT "stt" 120 &
 fi
 
 if [ "$ENABLE_TTS" = "1" ]; then
@@ -563,13 +569,9 @@ if [ "$ENABLE_TTS" = "1" ]; then
     uv run --no-sync uvicorn api.src.main:app \
         --host 0.0.0.0 \
         --port $TTS_PORT &
+    wait_for_port $TTS_PORT "tts" 120 &
 fi
 
-wait_for_port $INTERPRET_PORT "interpret" 300 &
-if [ "$ENABLE_REASONER" = "1" ]; then wait_for_port $REASONER_PORT "reasoner" 300 & fi
-if [ "$ENABLE_RERANK" = "1" ]; then wait_for_port $RERANK_PORT "rerank" 180 & fi
-if [ "$ENABLE_STT" = "1" ]; then wait_for_port $STT_PORT "stt" 120 & fi
-if [ "$ENABLE_TTS" = "1" ]; then wait_for_port $TTS_PORT "tts" 120 & fi
 wait
 
 start_idle_monitor

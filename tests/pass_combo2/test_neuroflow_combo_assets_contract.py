@@ -56,5 +56,12 @@ def test_neuroflow_combo_assets_present_and_wired():
     assert "python3.10-dev" in bootstrap_contents
     assert 'update_state "tts_dependencies" "running" "Installing Kokoro GPU runtime dependencies"' in bootstrap_contents
     assert 'update_state "tts_dependencies" "complete" "Kokoro GPU runtime dependencies installed"' in bootstrap_contents
+    assert "--gpu-memory-utilization 0.38" in bootstrap_contents
+    assert "--gpu-memory-utilization 0.25" in bootstrap_contents
+    assert "--max-model-len 4096" in bootstrap_contents
+    assert "--enforce-eager" in bootstrap_contents
+    assert 'wait_for_port $INTERPRET_PORT "interpret" 300' in bootstrap_contents
+    assert 'wait_for_port $RERANK_PORT "rerank" 180' in bootstrap_contents
+    assert 'wait_for_port $REASONER_PORT "reasoner" 300' in bootstrap_contents
     assert 'validate_interpret_model_dir "$MODELS_DIR/interpret" "interpret_download"' in bootstrap_contents
     assert 'rm -rf "$MODELS_DIR/rerank/.cache"' in bootstrap_contents
