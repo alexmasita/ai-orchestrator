@@ -28,7 +28,8 @@ instance_ready_timeout_seconds: 2400
 snapshot_version: v2-neuroflow-dev-80gb
 
 # Disk headroom:
-# ~37.3 GB model payload + runtime/env/cache/snapshots/temp.
+# Cold bootstrap pulls multiple large model repos plus temp/cache/runtime artifacts.
+# Keep this comfortably above the nominal model payload to avoid mid-download failures.
 whisper_vram_gb: 4
 whisper_disk_gb: 5
-min_disk_gb: 180
+min_disk_gb: 300

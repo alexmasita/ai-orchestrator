@@ -304,18 +304,46 @@ if [ ! -f "$SETUP_MARKER" ]; then
     update_state "python_install" "complete" "Python dependencies installed"
 
     update_state "interpret_download" "running" "Downloading interpret model"
-    hf download "$INTERPRET_MODEL" --local-dir "$MODELS_DIR/interpret"
+    hf download "$INTERPRET_MODEL" \
+        --local-dir "$MODELS_DIR/interpret" \
+        --include "config.json" \
+        --include "generation_config.json" \
+        --include "tokenizer.json" \
+        --include "tokenizer_config.json" \
+        --include "merges.txt" \
+        --include "vocab.json" \
+        --include "model.safetensors.index.json" \
+        --include "model-*.safetensors"
+    rm -rf "$MODELS_DIR/interpret/.cache"
     update_state "interpret_download" "complete" "Interpret model downloaded"
 
     if [ "$ENABLE_REASONER" = "1" ]; then
         update_state "reasoner_download" "running" "Downloading reasoner model"
-        hf download "$REASONER_MODEL" --local-dir "$MODELS_DIR/reasoner"
+        hf download "$REASONER_MODEL" \
+            --local-dir "$MODELS_DIR/reasoner" \
+            --include "config.json" \
+            --include "generation_config.json" \
+            --include "chat_template.jinja" \
+            --include "tokenizer.json" \
+            --include "tokenizer_config.json" \
+            --include "special_tokens_map.json" \
+            --include "model.safetensors.index.json" \
+            --include "model-*.safetensors"
+        rm -rf "$MODELS_DIR/reasoner/.cache"
         update_state "reasoner_download" "complete" "Reasoner model downloaded"
     fi
 
     if [ "$ENABLE_RERANK" = "1" ]; then
         update_state "rerank_download" "running" "Downloading rerank model"
-        hf download "$RERANK_MODEL" --local-dir "$MODELS_DIR/rerank"
+        hf download "$RERANK_MODEL" \
+            --local-dir "$MODELS_DIR/rerank" \
+            --include "config.json" \
+            --include "model.safetensors" \
+            --include "sentencepiece.bpe.model" \
+            --include "tokenizer.json" \
+            --include "tokenizer_config.json" \
+            --include "special_tokens_map.json"
+        rm -rf "$MODELS_DIR/rerank/.cache"
         update_state "rerank_download" "complete" "Rerank model downloaded"
     fi
 

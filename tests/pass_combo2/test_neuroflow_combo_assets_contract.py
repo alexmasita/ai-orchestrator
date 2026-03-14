@@ -42,6 +42,7 @@ def test_neuroflow_combo_assets_present_and_wired():
     assert runtime_config["idle_timeout_seconds"] == 1200
     assert runtime_config["instance_ready_timeout_seconds"] == 2400
     assert runtime_config["bootstrap_base_url"].startswith("https://raw.githubusercontent.com/")
+    assert int(runtime_config["min_disk_gb"]) >= 300
 
     bootstrap_contents = bootstrap_path.read_text(encoding="utf-8")
     assert "--runner pooling" in bootstrap_contents
@@ -49,3 +50,6 @@ def test_neuroflow_combo_assets_present_and_wired():
     assert "python3 - <<PY" in bootstrap_contents
     assert "uv venv .venv" in bootstrap_contents
     assert 'uv run --no-sync uvicorn api.src.main:app \\' in bootstrap_contents
+    assert '--include "chat_template.jinja"' in bootstrap_contents
+    assert '--include "model.safetensors"' in bootstrap_contents
+    assert 'rm -rf "$MODELS_DIR/rerank/.cache"' in bootstrap_contents
