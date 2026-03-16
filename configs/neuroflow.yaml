@@ -1,5 +1,6 @@
 vast_api_url: https://console.vast.ai/api/v0
 bootstrap_base_url: https://raw.githubusercontent.com/alexmasita/ai-orchestrator/main
+image: alexmasita/ai-neuroflow-snapshots:instance_32873649_at_March_14th_2026_at_09-44-20_PM_UTC
 
 gpu:
   # Cheap dev target: 80GB class cards.
@@ -26,7 +27,10 @@ limit: 1
 
 idle_timeout_seconds: 1200
 instance_ready_timeout_seconds: 2400
+restart_transition_timeout_seconds: 300
 snapshot_version: v2-neuroflow-dev-80gb
+runtime_file_paths:
+  - "/Users/macbook/Library/Mobile Documents/com~apple~CloudDocs/NeuroFlow_Experiments/moldavite/neuroflow-mvp/.runtime/neuroflow/neuroflow-runtime.json"
 
 # Disk headroom:
 # Cold bootstrap pulls multiple large model repos plus temp/cache/runtime artifacts.

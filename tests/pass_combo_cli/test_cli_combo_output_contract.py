@@ -19,6 +19,10 @@ def _invoke_main_safely(cli, argv):
         return exc.code
 
 
+def _healthy_control_payload(service_names):
+    return {"services": {name: {"status": "up"} for name in service_names}}
+
+
 def _runtime_state():
     return {
         "combo_name": "reasoning_80gb",
@@ -127,6 +131,14 @@ def test_combo_start_success_output_schema_locked(monkeypatch, capsys):
         },
         raising=False,
     )
+    monkeypatch.setattr(
+        cli,
+        "_fetch_combo_control_health",
+        lambda *_a, **_k: _healthy_control_payload(
+            ["architect", "developer", "stt", "tts", "control"]
+        ),
+        raising=False,
+    )
 
     exit_code = _invoke_main_safely(cli, ["start", "--combo", "reasoning_80gb"])
     assert exit_code == 0, "Expected successful combo start contract"
@@ -140,6 +152,8 @@ def test_combo_start_success_output_schema_locked(monkeypatch, capsys):
     payload = json.loads(out)
     expected_keys = {
         "instance_id",
+        "status",
+        "resolved_at",
         "gpu_type",
         "cost_per_hour",
         "architect_url",
@@ -149,9 +163,14 @@ def test_combo_start_success_output_schema_locked(monkeypatch, capsys):
         "control_url",
         "snapshot_version",
         "idle_timeout",
+        "publication_status",
+        "runtime_file_writes",
     }
     assert set(payload.keys()) == expected_keys
     assert list(payload.keys()) == sorted(payload.keys()), "Expected deterministic canonical key ordering"
+    assert payload["status"] == "ready"
+    assert payload["publication_status"] == "not_requested"
+    assert payload["runtime_file_writes"] == []
 
 
 def test_combo_start_errors_go_to_stderr_only(monkeypatch, capsys):

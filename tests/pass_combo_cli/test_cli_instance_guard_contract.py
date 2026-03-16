@@ -18,6 +18,10 @@ def _invoke_main_safely(cli, argv):
         return exc.code
 
 
+def _healthy_control_payload(service_names):
+    return {"services": {name: {"status": "up"} for name in service_names}}
+
+
 def _runtime_state():
     return {
         "combo_name": "reasoning_80gb",
@@ -152,6 +156,14 @@ def test_combo_start_allows_multiple_with_flag(monkeypatch):
 
     monkeypatch.setattr(cli, "VastProvider", _FakeProvider, raising=False)
     monkeypatch.setattr(cli, "resolve_runtime_state_for_combo", lambda *_a, **_k: _runtime_state(), raising=False)
+    monkeypatch.setattr(
+        cli,
+        "_fetch_combo_control_health",
+        lambda *_a, **_k: _healthy_control_payload(
+            ["architect", "developer", "stt", "tts", "control"]
+        ),
+        raising=False,
+    )
 
     _invoke_main_safely(cli, ["start", "--combo", "reasoning_80gb", "--allow-multiple"])
 
@@ -222,6 +234,14 @@ def test_combo_start_guard_ignores_inactive_instance_statuses(monkeypatch):
     monkeypatch.setattr(cli, "VastProvider", _FakeProvider, raising=False)
     monkeypatch.setattr(
         cli, "resolve_runtime_state_for_combo", lambda *_a, **_k: _runtime_state(), raising=False
+    )
+    monkeypatch.setattr(
+        cli,
+        "_fetch_combo_control_health",
+        lambda *_a, **_k: _healthy_control_payload(
+            ["architect", "developer", "stt", "tts", "control"]
+        ),
+        raising=False,
     )
 
     exit_code = _invoke_main_safely(cli, ["start", "--combo", "reasoning_80gb"])

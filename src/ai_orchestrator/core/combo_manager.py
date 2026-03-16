@@ -14,6 +14,7 @@ from ai_orchestrator.core.snapshot_manager import compute_snapshot_namespace
 _RUNTIME_INFRA_KEYS = {
     "allow_interruptible",
     "gpu",
+    "image",
     "idle_timeout_seconds",
     "instance_ready_timeout_seconds",
     "limit",
@@ -22,6 +23,7 @@ _RUNTIME_INFRA_KEYS = {
     "min_inet_down_mbps",
     "min_inet_up_mbps",
     "min_reliability",
+    "runtime_file_paths",
     "snapshot_version",
     "vast_api_key",
     "vast_api_url",

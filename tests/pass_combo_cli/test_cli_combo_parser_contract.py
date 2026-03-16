@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import io
+import sys
 
 
 def _load_cli_module():
@@ -84,3 +85,46 @@ def test_combo_and_models_are_mutually_exclusive():
     assert (
         "not allowed" in lowered or "mutually exclusive" in lowered
     ), "Expected explicit mutual-exclusion parser contract"
+
+
+def test_wizard_defaults_to_root_config():
+    cli = _load_cli_module()
+    assert cli is not None, "Expected ai_orchestrator.cli module"
+
+    parser = cli.build_parser()
+    ok, parsed_or_code, stderr_text = _parse_safely(parser, ["wizard"])
+
+    assert ok, f"Expected wizard parse success; stderr={stderr_text!r}"
+    parsed = parsed_or_code
+    assert parsed.command == "wizard"
+    assert getattr(parsed, "config", None) == "config.yaml"
+
+
+def test_resolve_defaults_to_root_config():
+    cli = _load_cli_module()
+    assert cli is not None, "Expected ai_orchestrator.cli module"
+
+    parser = cli.build_parser()
+    ok, parsed_or_code, stderr_text = _parse_safely(
+        parser,
+        ["resolve", "--combo", "neuroflow", "--instance-id", "32890211"],
+    )
+
+    assert ok, f"Expected resolve parse success; stderr={stderr_text!r}"
+    parsed = parsed_or_code
+    assert parsed.command == "resolve"
+    assert getattr(parsed, "config", None) == "config.yaml"
+
+
+def test_main_without_args_prints_help(monkeypatch, capsys):
+    cli = _load_cli_module()
+    assert cli is not None, "Expected ai_orchestrator.cli module"
+
+    monkeypatch.setattr(sys, "argv", ["ai-orchestrator"], raising=False)
+    exit_code = cli.main()
+
+    assert exit_code == 0
+    stdout = capsys.readouterr().out
+    assert "wizard" in stdout
+    assert "combos" in stdout
+    assert "resolve" in stdout

@@ -12,6 +12,7 @@ __pycache__/
 # Environment Variables / Secrets
 .env
 .secrets
+.ai-orchestrator/runtime/
 
 # Build and Distribution
 dist/

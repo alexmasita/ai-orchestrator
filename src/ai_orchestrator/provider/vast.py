@@ -502,12 +502,15 @@ class VastProvider(Provider):
                     env_payload[key] = str(raw_env[raw_key])
 
             image = instance_config.get("image") or "vllm/vllm-openai:latest"
+            combo_label = str(instance_config.get("combo_name", "")).strip()
             payload = {
                 "image": image,
                 "runtype": "ssh_direct",
                 "env": env_payload,
                 "onstart": onstart_payload,
             }
+            if combo_label != "":
+                payload["label"] = f"ai-orch:{combo_label}"
             if "disk" in instance_config and instance_config.get("disk") is not None:
                 payload["disk"] = instance_config["disk"]
             self._validate_payload_lengths(payload)
@@ -598,9 +601,13 @@ class VastProvider(Provider):
                 instance_payload.get("id", instance_payload.get("instance_id", instance_id))
             ),
             "status": instance_payload.get("actual_status", instance_payload.get("state", "unknown")),
+            "actual_status": instance_payload.get(
+                "actual_status", instance_payload.get("state", "unknown")
+            ),
             "gpu_name": instance_payload.get("gpu_name"),
             "public_ipaddr": instance_payload.get("public_ipaddr"),
             "ports": instance_payload.get("ports", {}),
+            "label": instance_payload.get("label"),
         }
 
     def list_instances(self) -> list[dict[str, Any]]:
@@ -630,9 +637,11 @@ class VastProvider(Provider):
                 {
                     "instance_id": str(item.get("id", item.get("instance_id", ""))),
                     "status": item.get("actual_status", item.get("state", "unknown")),
+                    "actual_status": item.get("actual_status", item.get("state", "unknown")),
                     "gpu_name": item.get("gpu_name"),
                     "public_ipaddr": item.get("public_ipaddr"),
                     "ports": item.get("ports", {}),
+                    "label": item.get("label"),
                 }
             )
         return sorted(normalized, key=lambda entry: entry["instance_id"])

@@ -19,6 +19,10 @@ def _invoke_main_safely(cli, argv):
         return exc.code
 
 
+def _healthy_control_payload(service_names):
+    return {"services": {name: {"status": "up"} for name in service_names}}
+
+
 def _runtime_state():
     return {
         "combo_name": "reasoning_80gb",
@@ -148,6 +152,14 @@ def test_combo_start_uses_resolve_combo_endpoints(monkeypatch, capsys):
     )
     monkeypatch.setattr(cli, "resolve_combo_endpoints", _fake_resolve_combo_endpoints, raising=False)
     monkeypatch.setattr(cli, "VastProvider", _FakeProvider, raising=False)
+    monkeypatch.setattr(
+        cli,
+        "_fetch_combo_control_health",
+        lambda *_a, **_k: _healthy_control_payload(
+            ["architect", "developer", "stt", "tts", "control"]
+        ),
+        raising=False,
+    )
 
     exit_code = _invoke_main_safely(cli, ["start", "--combo", "reasoning_80gb"])
     _ = exit_code

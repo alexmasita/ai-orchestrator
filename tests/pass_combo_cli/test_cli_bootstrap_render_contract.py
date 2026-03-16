@@ -18,6 +18,10 @@ def _invoke_main_safely(cli, argv):
         return exc.code
 
 
+def _healthy_control_payload(service_names):
+    return {"services": {name: {"status": "up"} for name in service_names}}
+
+
 def test_combo_start_uses_render_bootstrap_script(monkeypatch):
     cli = _load_cli_module()
     assert cli is not None, "Expected ai_orchestrator.cli module"
@@ -127,6 +131,14 @@ def test_combo_start_uses_render_bootstrap_script(monkeypatch):
     )
     monkeypatch.setattr(cli, "render_bootstrap_script", _fake_render_bootstrap_script, raising=False)
     monkeypatch.setattr(cli, "VastProvider", _FakeProvider, raising=False)
+    monkeypatch.setattr(
+        cli,
+        "_fetch_combo_control_health",
+        lambda *_a, **_k: _healthy_control_payload(
+            ["architect", "developer", "stt", "tts", "control"]
+        ),
+        raising=False,
+    )
 
     _invoke_main_safely(cli, ["start", "--combo", "reasoning_80gb"])
 
